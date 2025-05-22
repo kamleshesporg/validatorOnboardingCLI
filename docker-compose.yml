@@ -1,0 +1,17 @@
+version: '3.8'
+services:
+  mrmintchain:
+    image: test
+    tty: true
+    stdin_open: true
+    # command : mrmintchain
+    command: ["mrmintchain", "auto-setup", "--mynode", "kamlesh021"]
+    # ports:
+    #   - "36666:36666"   # P2P
+    #   - "36667:36667"   # RPC
+    #   - "3092:3092"     # gRPC
+    #   - "3093:3093"     # gRPC-Web
+    #   - "3535:3535"     # JSON-RPC
+    # volumes:
+    #   - ./kamlesh01:/kamlesh
+    # restart: unless-stopped

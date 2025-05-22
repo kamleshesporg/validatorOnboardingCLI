@@ -9,15 +9,13 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 
 	"github.com/manifoldco/promptui"
 )
 
 func updateGenesis(mynode string) {
 
-	// genesisURL := "https://ipfs.io/ipfs/bafkreiap6fsih5kdo3ixssmfw6lcnjzo6fybux3pguovzkgmed2bwsnue4"
-	genesisURL := "http://3.110.16.39/genesis.json"
+	genesisURL := configCliParams.GenesisUrl //"https://web3sports.s3.ap-south-1.amazonaws.com/blockchain/genesis.json"
 
 	resp, err := http.Get(genesisURL)
 	if err != nil {
@@ -38,8 +36,7 @@ func updateGenesis(mynode string) {
 
 func updateConfigToml(mynode string) {
 
-	// confiToml := "https://ipfs.io/ipfs/bafkreie7me3gxmun26g7fzb5ncnp2kiqcilmzy5gn67ayylovagzoyk2mu"
-	confiToml := "http://3.110.16.39/config.txt"
+	confiToml := configCliParams.ConfigTomlUrl //"https://web3sports.s3.ap-south-1.amazonaws.com/blockchain/config.toml"
 
 	resp, err := http.Get(confiToml)
 	if err != nil {
@@ -50,50 +47,21 @@ func updateConfigToml(mynode string) {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	sb := string(body)
+	// sb := string(body)
 	// log.Printf(sb)
 
-	getPeerId := getPersistentPeers()
-	newgetPeerId := string(getPeerId)
+	// getPeerId := getPersistentPeers()
+	// newgetPeerId := string(getPeerId)
 
-	update := strings.Replace(sb, "persistent_peers = \"\"", "persistent_peers = \""+newgetPeerId+"\"", 1)
+	// update := strings.Replace(sb, "persistent_peers = \"\"", "persistent_peers = \""+newgetPeerId+"\"", 1)
 
 	// Create the file
-	err1 := os.WriteFile(mynode+"/config/config.toml", []byte(update), os.ModePerm)
+	err1 := os.WriteFile(mynode+"/config/config.toml", []byte(body), os.ModePerm)
 	if err1 != nil {
 		fmt.Println(err1)
 	}
 
 	fmt.Println("Config.toml updated.")
-}
-
-type Cryptoresponse struct {
-	PersistentPeers string `json:"persistent_peers"`
-}
-
-func getPersistentPeers() string {
-	// https://plum-skinny-bedbug-581.mypinata.cloud/
-	// confiToml := "https://ipfs.io/ipfs/bafkreiaz3gotvqz4llrctggfvpfwdzdmaqfxaggnv53sk6rveqvjh52oha"
-	confiToml := "http://3.110.16.39/persistent_peers.json"
-
-	resp, err := http.Get(confiToml)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	//We Read the response body on the line below.
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	// //Create a variable of the same type as our model
-	var cResp Cryptoresponse
-
-	err = json.Unmarshal(body, &cResp)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return cResp.PersistentPeers
 }
 
 func exists(path string) bool {
@@ -117,4 +85,38 @@ func yesNo(msg string) bool {
 		log.Fatalf("Prompt failed %v\n", err)
 	}
 	return result == "Yes"
+}
+
+/** TEMP - UNUSED FUNCTION */
+
+func getConfigCliParams() ConfigCliParams {
+
+	fmt.Println("Config parameters fetching...")
+	// configParams := "https://web3sports.s3.ap-south-1.amazonaws.com/blockchain/mrmintChainCLIconfig.json"
+
+	// resp, err := http.Get(configParams)
+	// if err != nil {
+	// 	log.Fatalln(err)
+	// }
+	//We Read the response body on the line below.
+	// body, err := io.ReadAll(resp.Body)
+	// if err != nil {
+	// 	log.Fatalln(err)
+	// }
+	body := []byte(`{
+    "persistent_peers": "521c3b33982d9246bf76f12377d4842f696e92f2@3.110.16.39:26656",
+    "genesisUrl": "https://web3sports.s3.ap-south-1.amazonaws.com/blockchain/server/genesis.json",
+    "configToml": "https://web3sports.s3.ap-south-1.amazonaws.com/blockchain/server/config.toml",
+    "chindId": "os_9000-1",
+    "minStakeFund": 50,
+    "bootNodeRpc":"http://3.110.16.39:26657"
+}`)
+	// //Create a variable of the same type as our model
+	var cResp ConfigCliParams
+
+	err := json.Unmarshal(body, &cResp)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return cResp
 }

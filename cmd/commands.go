@@ -16,6 +16,17 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+type ConfigCliParams struct {
+	PersistentPeers string `json:"persistent_peers"`
+	GenesisUrl      string `json:"genesisUrl"`
+	ConfigTomlUrl   string `json:"configToml"`
+	ChindId         string `json:"chindId"`
+	MinStakeFund    int64  `json:"minStakeFund"`
+	BootNodeRpc     string `jonsL"bootNodeRpc"`
+}
+
+var configCliParams ConfigCliParams
+
 func runCmd(command string, args ...string) error {
 	fmt.Printf("Running: %s %v\n", command, args)
 	cmd := exec.Command(command, args...)
@@ -50,6 +61,8 @@ func initNodeCmd() *cobra.Command {
 
 // ✅ Extracted logic to reuse in auto-run
 func initNodeLogic(mynode string) error {
+	configCliParams = getConfigCliParams()
+	fmt.Println(configCliParams)
 	genesisPath := mynode + "/config/genesis.json"
 
 	if exists(genesisPath) {
@@ -63,7 +76,7 @@ func initNodeLogic(mynode string) error {
 		}
 	}
 
-	if err := runCmd("ethermintd", "init", mynode, "--chain-id", "os_9000-1", "--home", mynode); err != nil {
+	if err := runCmd("ethermintd", "init", mynode, "--chain-id", configCliParams.ChindId, "--home", mynode); err != nil {
 		return fmt.Errorf("init command failed: %w", err)
 	}
 
@@ -90,10 +103,10 @@ func addKeyCmd() *cobra.Command {
 }
 
 func addKeyCmdLogic(mynode string) error {
-	permission := yesNo("Are you want to generate wallet ?")
-	if !permission {
-		log.Fatalf("Key Generation process stop.")
-	}
+	// permission := yesNo("Are you want to generate wallet ?")
+	// if !permission {
+	// 	log.Fatalf("Key Generation process stop.")
+	// }
 
 	output, err := runCmdCaptureOutput("ethermintd", "keys", "add", mynode, "--algo", "eth_secp256k1", "--keyring-backend", "test", "--home", mynode)
 	if err != nil {
@@ -102,7 +115,7 @@ func addKeyCmdLogic(mynode string) error {
 
 	fmt.Println("Key generation output:\n", output)
 	fmt.Println("\n🔑 Please copy your key output above. Press Enter to continue...")
-	fmt.Scanln()
+	// fmt.Scanln()
 	return nil
 }
 
@@ -114,8 +127,6 @@ func addGenesisAccountCmd() *cobra.Command {
 		Short: "Add validator account to genesis",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return addGenesisAccountLogic(mynode)
-			// addr := string(addrOut)
-			// return runCmd("ethermintd", "add-genesis-account", addr, "1000000000000000000aphoton")
 		},
 	}
 	cmd.Flags().StringVar(&mynode, "mynode", "", "Please enter your node name")
@@ -136,7 +147,7 @@ func addGenesisAccountLogic(mynode string) error {
 	}
 	fmt.Printf("Ethereum address: %s", ethAddress)
 
-	fmt.Println("\n📲 QR Code (scan it securely): Please send 50 MNT coin to your validator wallet for validator staking.")
+	fmt.Println("\n📲 QR Code (scan it securely): Please send %d MNT coin to your validator wallet for validator staking.", configCliParams.MinStakeFund)
 	fmt.Println("Its your validator wallet : ")
 	fmt.Println("Default ethm1 format : ", ethm1Address)
 	fmt.Println("Converted into 0x format :", ethAddress)
@@ -144,7 +155,7 @@ func addGenesisAccountLogic(mynode string) error {
 
 	getConfirmationForPayment("Have you send MNT?", ethm1Address)
 	fmt.Println("Now stake cmd run....")
-	fmt.Scanln()
+	// fmt.Scanln()
 
 	return nil
 }
@@ -162,6 +173,7 @@ func getConfirmationForPayment(s string, ethm1Address string) bool {
 			fmt.Println("\n ✅ Your fund deposited Now")
 			return true
 		} else {
+			fmt.Println("\n ❌ Balance not deposited yet, Please try again.")
 			getConfirmationForPayment(s, ethm1Address)
 		}
 		// Perform actions for "yes"
@@ -194,8 +206,12 @@ type CmdOutput struct {
 }
 
 func getBalanceCmdLogic(walletEthmAddress string) bool {
-
-	output, err := runCmdCaptureOutput("ethermintd", "query", "bank", "balances", walletEthmAddress, "--node", "tcp://localhost:26657")
+	bootRpc := configCliParams.BootNodeRpc
+	if bootRpc == "" {
+		fmt.Errorf("Boot node rpc not provided")
+		return false
+	}
+	output, err := runCmdCaptureOutput("ethermintd", "query", "bank", "balances", walletEthmAddress, "--node", bootRpc)
 	if err != nil {
 		fmt.Errorf("Get balance command failed: %w\nOutput: %s", err, output)
 		return false
@@ -224,17 +240,15 @@ func getBalanceCmdLogic(walletEthmAddress string) bool {
 		wei := big.NewInt(1e18)
 		exactBalance := new(big.Int).Div(bigAmount, wei)
 
-		fmt.Println("The balance is:", exactBalance.String())
-
 		if err != nil {
 			fmt.Println("Error:", err)
 			return false
 		}
 
 		// This block would only execute if balances was not empty.
-		fmt.Println("The balances is :", exactBalance, cResp.Balances[0].Denom)
-		if exactBalance.Int64() < 50 {
-			fmt.Println("The balances is less then mininmum deposit amount 50mnt, Please deposit more")
+		fmt.Println(" 💸 The balances is :", exactBalance, cResp.Balances[0].Denom)
+		if exactBalance.Int64() < configCliParams.MinStakeFund {
+			fmt.Println(" 😧 The balances is less then mininmum deposit amount %d mnt, Please deposit more", configCliParams.MinStakeFund)
 			return false
 		}
 
@@ -258,46 +272,71 @@ func startNodeCmd() *cobra.Command {
 }
 
 func startNodeCmdLogic(mynode string) error {
+	portsArray := []string{}
 
-	p2pladdr := "tcp://0.0.0.0:" + getPortInputAndCheck("Please enter 6digit port for p2p-laddr:", "26666")
-	fmt.Println("p2pladdr:", p2pladdr)
-	rpcladdr := "tcp://0.0.0.0:" + getPortInputAndCheck("Please enter 6digit port for rpc-laddr:", "26667")
-	fmt.Println("rpcladdr:", rpcladdr)
-	grpcAddress := "0.0.0.0:" + getPortInputAndCheck("Please enter 4digit port for rpc-laddr:", "9092")
-	fmt.Println("grpcAddress:", grpcAddress)
-	grpcwebaddress := "0.0.0.0:" + getPortInputAndCheck("Please enter 4digit port for grpc-web-address:", "9093")
-	fmt.Println("grpcwebaddress:", grpcwebaddress)
-	jsonrpcaddress := "0.0.0.0:" + getPortInputAndCheck("Please enter 4digit port for json-rpc-address:", "8547")
-	fmt.Println("jsonrpcaddress:", jsonrpcaddress)
+	port1 := getPortInputAndCheck("\n 👉 Please enter 5 digit port for p2p-laddr:", "26666", portsArray)
+	portsArray = append(portsArray, port1)
+	p2pladdr := "tcp://0.0.0.0:" + port1
+	fmt.Println("    ✅ p2p-laddr:", p2pladdr)
 
-	output, err := runCmdCaptureOutput("ethermintd", "start",
+	port2 := getPortInputAndCheck("\n 👉 Please enter 5 digit port for rpc-laddr:", "26667", portsArray)
+	portsArray = append(portsArray, port2)
+	rpcladdr := "tcp://0.0.0.0:" + port2
+	fmt.Println("    ✅ rpc-laddr:", rpcladdr)
+
+	port3 := getPortInputAndCheck("\n 👉 Please enter 4 digit port for grpc-address:", "9092", portsArray)
+	portsArray = append(portsArray, port3)
+	grpcAddress := "0.0.0.0:" + port3
+	fmt.Println("    ✅ grpc-address:", grpcAddress)
+
+	port4 := getPortInputAndCheck("\n 👉 Please enter 4 digit port for grpc-web-address:", "9093", portsArray)
+	portsArray = append(portsArray, port4)
+	grpcwebaddress := "0.0.0.0:" + port4
+	fmt.Println("    ✅ grpc-web-address:", grpcwebaddress)
+
+	port5 := getPortInputAndCheck("\n 👉 Please enter 4 digit port for json-rpc-address:", "8547", portsArray)
+	jsonrpcaddress := "0.0.0.0:" + port5
+	fmt.Println("    ✅ json-rpc-address:", jsonrpcaddress)
+
+	err := runCmd("ethermintd", "start",
 		"--home", mynode,
 		"--p2p.laddr", p2pladdr,
 		"--rpc.laddr", rpcladdr,
 		"--grpc.address", grpcAddress,
 		"--grpc-web.address", grpcwebaddress,
-		"--json-rpc.address", jsonrpcaddress)
+		"--json-rpc.address", jsonrpcaddress,
+		"--p2p.persistent_peers", configCliParams.PersistentPeers)
 	if err != nil {
-		return fmt.Errorf("node start command failed: %w\nOutput: %s", err, output)
+		return fmt.Errorf("node start command failed: %w", err)
 	}
-	fmt.Printf("Node Started:", output)
+	fmt.Printf("Node Started!!!!!!!!!")
 	return err
 }
 
-func getPortInputAndCheck(s string, defualtPort string) string {
+func getPortInputAndCheck(s string, defualtPort string, portsArray []string) string {
 
 	reader := bufio.NewReader(os.Stdin)
 
-	fmt.Printf("%s (Ex: %d): ", s, defualtPort)
+	fmt.Printf("%s (default: [%s]): ", s, defualtPort)
 	input, _ := reader.ReadString('\n')
 	input = strings.TrimSpace(input)
 	input = strings.ToLower(input)
+
 	if input == "" {
-		return getPortInputAndCheck(s, defualtPort)
+		input = defualtPort
+		// return getPortInputAndCheck(s, defualtPort, portsArray)
+	}
+	if strings.Count(defualtPort, "") != strings.Count(input, "") {
+		fmt.Printf("❌ Invalid port length")
+		return getPortInputAndCheck(s, defualtPort, portsArray)
+	}
+	if checkArrayAlreadyExists(portsArray, input) {
+		fmt.Printf("❌ Port %s is arleady used, try another one", input)
+		return getPortInputAndCheck(s, defualtPort, portsArray)
 	}
 	if err := checkPort(input); err != nil {
-		fmt.Printf("Port %s is already in use: %s\n", input, err)
-		return getPortInputAndCheck(s, defualtPort)
+		fmt.Printf("❌ Port %s is : %s\n", input, err)
+		return getPortInputAndCheck(s, defualtPort, portsArray)
 	}
 	return input
 }
@@ -311,26 +350,11 @@ func checkPort(port string) error {
 	defer ln.Close()
 	return nil
 }
-
-func gentxCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "gentx",
-		Short: "Generate genesis transaction",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCmd("ethermintd", "gentx", "validator", "1000000000000000000aphoton",
-				"--chain-id", "os_9000-1",
-				"--moniker", "mynode",
-				"--keyring-backend", "test")
-		},
+func checkArrayAlreadyExists(slice []string, value string) bool {
+	for _, item := range slice {
+		if item == value {
+			return true
+		}
 	}
-}
-
-func collectGentxsCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "collect-gentxs",
-		Short: "Collect gentxs into genesis.json",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCmd("ethermintd", "collect-gentxs")
-		},
-	}
+	return false
 }
