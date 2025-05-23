@@ -8,9 +8,13 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	// For terminal display
+
+	"github.com/joho/godotenv"
 	"github.com/mdp/qrterminal"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
@@ -62,7 +66,10 @@ func initNodeCmd() *cobra.Command {
 // ✅ Extracted logic to reuse in auto-run
 func initNodeLogic(mynode string) error {
 	configCliParams = getConfigCliParams()
-	fmt.Println(configCliParams)
+
+	validatorName := mynode
+	mynode = "/app/" + mynode
+
 	genesisPath := mynode + "/config/genesis.json"
 
 	if exists(genesisPath) {
@@ -76,7 +83,7 @@ func initNodeLogic(mynode string) error {
 		}
 	}
 
-	if err := runCmd("ethermintd", "init", mynode, "--chain-id", configCliParams.ChindId, "--home", mynode); err != nil {
+	if err := runCmd("ethermintd", "init", validatorName, "--chain-id", configCliParams.ChindId, "--home", mynode); err != nil {
 		return fmt.Errorf("init command failed: %w", err)
 	}
 
@@ -108,7 +115,10 @@ func addKeyCmdLogic(mynode string) error {
 	// 	log.Fatalf("Key Generation process stop.")
 	// }
 
-	output, err := runCmdCaptureOutput("ethermintd", "keys", "add", mynode, "--algo", "eth_secp256k1", "--keyring-backend", "test", "--home", mynode)
+	validatorName := mynode
+	mynode = "/app/" + mynode
+
+	output, err := runCmdCaptureOutput("ethermintd", "keys", "add", validatorName, "--algo", "eth_secp256k1", "--keyring-backend", "test", "--home", mynode)
 	if err != nil {
 		return fmt.Errorf("keys add command failed: %w\nOutput: %s", err, output)
 	}
@@ -135,7 +145,11 @@ func addGenesisAccountCmd() *cobra.Command {
 }
 
 func addGenesisAccountLogic(mynode string) error {
-	getAddr := exec.Command("ethermintd", "keys", "show", mynode, "-a", "--home", mynode, "--keyring-backend", "test")
+
+	validatorName := mynode
+	mynode = "/app/" + mynode
+
+	getAddr := exec.Command("ethermintd", "keys", "show", validatorName, "-a", "--home", mynode, "--keyring-backend", "test")
 	addrOut, err := getAddr.Output()
 	if err != nil {
 		return err
@@ -271,85 +285,298 @@ func startNodeCmd() *cobra.Command {
 	return cmd
 }
 
-func startNodeCmdLogic(mynode string) error {
+// func startNodeCmdLogic(mynode string) error {
+// 	portsArray := []string{}
+
+// 	port1 := getPortInputAndCheck("\n 👉 Please enter 5 digit port for p2p-laddr:", "26666", portsArray)
+// 	portsArray = append(portsArray, port1)
+// 	p2pladdr := "tcp://0.0.0.0:" + port1
+// 	fmt.Println("    ✅ p2p-laddr:", p2pladdr)
+
+// 	port2 := getPortInputAndCheck("\n 👉 Please enter 5 digit port for rpc-laddr:", "26667", portsArray)
+// 	portsArray = append(portsArray, port2)
+// 	rpcladdr := "tcp://0.0.0.0:" + port2
+// 	fmt.Println("    ✅ rpc-laddr:", rpcladdr)
+
+// 	port3 := getPortInputAndCheck("\n 👉 Please enter 4 digit port for grpc-address:", "9092", portsArray)
+// 	portsArray = append(portsArray, port3)
+// 	grpcAddress := "0.0.0.0:" + port3
+// 	fmt.Println("    ✅ grpc-address:", grpcAddress)
+
+// 	port4 := getPortInputAndCheck("\n 👉 Please enter 4 digit port for grpc-web-address:", "9093", portsArray)
+// 	portsArray = append(portsArray, port4)
+// 	grpcwebaddress := "0.0.0.0:" + port4
+// 	fmt.Println("    ✅ grpc-web-address:", grpcwebaddress)
+
+// 	port5 := getPortInputAndCheck("\n 👉 Please enter 4 digit port for json-rpc-address:", "8547", portsArray)
+// 	jsonrpcaddress := "0.0.0.0:" + port5
+// 	fmt.Println("    ✅ json-rpc-address:", jsonrpcaddress)
+
+// 	err := runCmd("ethermintd", "start",
+// 		"--home", mynode,
+// 		"--p2p.laddr", p2pladdr,
+// 		"--rpc.laddr", rpcladdr,
+// 		"--grpc.address", grpcAddress,
+// 		"--grpc-web.address", grpcwebaddress,
+// 		"--json-rpc.address", jsonrpcaddress,
+// 		"--p2p.persistent_peers", configCliParams.PersistentPeers)
+// 	if err != nil {
+// 		return fmt.Errorf("node start command failed: %w", err)
+// 	}
+// 	fmt.Printf("Node Started!!!!!!!!!")
+// 	return err
+// }
+
+func portsAndEnvGeneration(mynode string) error {
 	portsArray := []string{}
+	fmt.Println(configCliParams)
+	p2p := getPortInputAndCheck("P2P_PORT", "26666", portsArray)
+	portsArray = append(portsArray, p2p)
 
-	port1 := getPortInputAndCheck("\n 👉 Please enter 5 digit port for p2p-laddr:", "26666", portsArray)
-	portsArray = append(portsArray, port1)
-	p2pladdr := "tcp://0.0.0.0:" + port1
-	fmt.Println("    ✅ p2p-laddr:", p2pladdr)
+	rpc := getPortInputAndCheck("RPC_PORT", "26667", portsArray)
+	portsArray = append(portsArray, rpc)
 
-	port2 := getPortInputAndCheck("\n 👉 Please enter 5 digit port for rpc-laddr:", "26667", portsArray)
-	portsArray = append(portsArray, port2)
-	rpcladdr := "tcp://0.0.0.0:" + port2
-	fmt.Println("    ✅ rpc-laddr:", rpcladdr)
+	grpc := getPortInputAndCheck("GRPC_PORT", "9092", portsArray)
+	portsArray = append(portsArray, grpc)
 
-	port3 := getPortInputAndCheck("\n 👉 Please enter 4 digit port for grpc-address:", "9092", portsArray)
-	portsArray = append(portsArray, port3)
-	grpcAddress := "0.0.0.0:" + port3
-	fmt.Println("    ✅ grpc-address:", grpcAddress)
+	grpcWeb := getPortInputAndCheck("GRPC_WEB_PORT", "9093", portsArray)
+	portsArray = append(portsArray, grpcWeb)
 
-	port4 := getPortInputAndCheck("\n 👉 Please enter 4 digit port for grpc-web-address:", "9093", portsArray)
-	portsArray = append(portsArray, port4)
-	grpcwebaddress := "0.0.0.0:" + port4
-	fmt.Println("    ✅ grpc-web-address:", grpcwebaddress)
+	jsonRpc := getPortInputAndCheck("JSON_RPC_PORT", "8547", portsArray)
+	// portsArray = append(portsArray, jsonRpc)
 
-	port5 := getPortInputAndCheck("\n 👉 Please enter 4 digit port for json-rpc-address:", "8547", portsArray)
-	jsonrpcaddress := "0.0.0.0:" + port5
-	fmt.Println("    ✅ json-rpc-address:", jsonrpcaddress)
+	// ports := map[string]string{
+	// 	"P2P_PORT":         p2p,
+	// 	"RPC_PORT":         rpc,
+	// 	"GRPC_PORT":        grpc,
+	// 	"GRPC_WEB_PORT":    grpcWeb,
+	// 	"JSON_RPC_PORT":    jsonRpc,
+	// 	"PERSISTENT_PEERS": configCliParams.PersistentPeers,
+	// }
 
-	err := runCmd("ethermintd", "start",
-		"--home", mynode,
-		"--p2p.laddr", p2pladdr,
-		"--rpc.laddr", rpcladdr,
-		"--grpc.address", grpcAddress,
-		"--grpc-web.address", grpcwebaddress,
-		"--json-rpc.address", jsonrpcaddress,
-		"--p2p.persistent_peers", configCliParams.PersistentPeers)
-	if err != nil {
-		return fmt.Errorf("node start command failed: %w", err)
+	// err := savePortsToEnvFile("/app/.env", ports)
+	// if err != nil {
+	// 	log.Fatal("Failed to save ports:", err)
+	// }
+	// return err
+
+	// Construct .env content
+	envContent := fmt.Sprintf(`P2P_PORT=%s
+RPC_PORT=%s
+GRPC_PORT=%s
+GRPC_WEB_PORT=%s
+JSON_RPC_PORT=%s
+PERSISTENT_PEERS=%s`, p2p,
+		rpc,
+		grpc,
+		grpcWeb,
+		jsonRpc,
+		configCliParams.PersistentPeers)
+
+	// Path to write .env
+	envPath := filepath.Join(mynode, ".env")
+
+	// Ensure the directory exists
+	if err := os.MkdirAll(mynode, os.ModePerm); err != nil {
+		fmt.Printf("❌ Failed to create node directory: %v\n", err)
+		os.Exit(1)
 	}
-	fmt.Printf("Node Started!!!!!!!!!")
+
+	// Write to .env
+	err := os.WriteFile(envPath, []byte(envContent), 0644)
+	if err != nil {
+		fmt.Printf("❌ Failed to write .env file: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✅ .env file generated at %s\n", envPath)
 	return err
 }
 
-func getPortInputAndCheck(s string, defualtPort string, portsArray []string) string {
+// func startNodeCmd() *cobra.Command {
+// 	var mynode string
+// 	var p2pPort, rpcPort, grpcPort, grpcWebPort, jsonRpcPort string
 
+// 	cmd := &cobra.Command{
+// 		Use:   "start-node",
+// 		Short: "Start the Ethermint node",
+// 		RunE: func(cmd *cobra.Command, args []string) error {
+// 			return startNodeCmdLogic(mynode, p2pPort, rpcPort, grpcPort, grpcWebPort, jsonRpcPort, cmd)
+// 		},
+// 	}
+
+// 	cmd.Flags().StringVar(&mynode, "mynode", "", "Node name (required)")
+// 	cmd.Flags().StringVar(&p2pPort, "p2p-port", "", "Port for p2p.laddr (5 digits)")
+// 	cmd.Flags().StringVar(&rpcPort, "rpc-port", "", "Port for rpc.laddr (5 digits)")
+// 	cmd.Flags().StringVar(&grpcPort, "grpc-port", "", "Port for grpc.address (4 digits)")
+// 	cmd.Flags().StringVar(&grpcWebPort, "grpc-web-port", "", "Port for grpc-web.address (4 digits)")
+// 	cmd.Flags().StringVar(&jsonRpcPort, "json-rpc-port", "", "Port for json-rpc.address (4 digits)")
+// 	cmd.MarkFlagRequired("mynode")
+
+// 	return cmd
+// }
+
+func startNodeCmdLogic(mynode string) error {
+	// Load the .env file
+
+	mynode = "/app/" + mynode
+
+	err := godotenv.Load(filepath.Join(mynode, ".env"))
+	if err != nil {
+		log.Fatalf("❌ Failed to load .env: %v", err)
+	}
+
+	// Read from environment variables (set during auto-setup)
+	p2pPort := getEnvOrFail("P2P_PORT")
+	rpcPort := getEnvOrFail("RPC_PORT")
+	grpcPort := getEnvOrFail("GRPC_PORT")
+	grpcWebPort := getEnvOrFail("GRPC_WEB_PORT")
+	jsonRpcPort := getEnvOrFail("JSON_RPC_PORT")
+	PersistentPeers := getEnvOrFail("PERSISTENT_PEERS")
+
+	p2pLaddr := "tcp://0.0.0.0:" + p2pPort
+	rpcLaddr := "tcp://0.0.0.0:" + rpcPort
+	grpcAddress := "0.0.0.0:" + grpcPort
+	grpcWebAddress := "0.0.0.0:" + grpcWebPort
+	jsonRpcAddress := "0.0.0.0:" + jsonRpcPort
+
+	fmt.Println("✅ Using Ports from ENV:")
+	fmt.Println("  - p2p-laddr:", p2pLaddr)
+	fmt.Println("  - rpc-laddr:", rpcLaddr)
+	fmt.Println("  - grpc-address:", grpcAddress)
+	fmt.Println("  - grpc-web-address:", grpcWebAddress)
+	fmt.Println("  - json-rpc-address:", jsonRpcAddress)
+	fmt.Println("  - persistent-peers:", PersistentPeers)
+
+	// Run the command with ports from ENV
+	err = runCmd("ethermintd", "start",
+		"--home", mynode,
+		"--p2p.laddr", p2pLaddr,
+		"--rpc.laddr", rpcLaddr,
+		"--grpc.address", grpcAddress,
+		"--grpc-web.address", grpcWebAddress,
+		"--json-rpc.address", jsonRpcAddress,
+		"--p2p.persistent_peers", PersistentPeers)
+	if err != nil {
+		return fmt.Errorf("❌ node start command failed: %w", err)
+	}
+
+	fmt.Println("🚀 Node started successfully!")
+	return nil
+}
+
+func getEnvOrFail(key string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		log.Fatalf("❌ Missing required environment variable: %s", key)
+	}
+	return value
+}
+
+func savePortsToEnvFile(envPath string, ports map[string]string) error {
+	file, err := os.Create(envPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	for key, value := range ports {
+		line := fmt.Sprintf("%s=%s\n", key, value)
+		_, err := file.WriteString(line)
+		if err != nil {
+			return err
+		}
+	}
+	fmt.Println("✅ Ports saved to", envPath)
+	return nil
+}
+
+func getPortInputAndCheck(prompt string, defaultPort string, existing []string) string {
 	reader := bufio.NewReader(os.Stdin)
 
-	fmt.Printf("%s (default: [%s]): ", s, defualtPort)
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(input)
-	input = strings.ToLower(input)
+	for {
+		fmt.Printf("%s [%s]: ", prompt, defaultPort)
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(input)
 
-	if input == "" {
-		input = defualtPort
-		// return getPortInputAndCheck(s, defualtPort, portsArray)
+		if input == "" {
+			input = defaultPort
+		}
+
+		// Check numeric
+		if _, err := strconv.Atoi(input); err != nil {
+			fmt.Println("❌ Invalid input. Please enter numeric port.")
+			continue
+		}
+
+		// Check port length (4 or 5 digits)
+		if len(input) != 4 && len(input) != 5 {
+			fmt.Println("❌ Port must be 4 or 5 digits.")
+			continue
+		}
+
+		// Check for duplicates
+		if checkArrayAlreadyExists(existing, input) {
+			fmt.Printf("❌ Port %s already used.\n", input)
+			continue
+		}
+
+		// Check availability
+		if err := checkPort(input); err != nil {
+			fmt.Printf("❌ Port %s not available: %s\n", input, err)
+			continue
+		}
+
+		return input
 	}
-	if strings.Count(defualtPort, "") != strings.Count(input, "") {
-		fmt.Printf("❌ Invalid port length")
-		return getPortInputAndCheck(s, defualtPort, portsArray)
-	}
-	if checkArrayAlreadyExists(portsArray, input) {
-		fmt.Printf("❌ Port %s is arleady used, try another one", input)
-		return getPortInputAndCheck(s, defualtPort, portsArray)
-	}
-	if err := checkPort(input); err != nil {
-		fmt.Printf("❌ Port %s is : %s\n", input, err)
-		return getPortInputAndCheck(s, defualtPort, portsArray)
-	}
-	return input
 }
+
+// func getPortInputAndCheck(s string, defualtPort string, portsArray []string) string {
+
+// 	reader := bufio.NewReader(os.Stdin)
+
+// 	fmt.Printf("%s (default: [%s]): ", s, defualtPort)
+// 	input, _ := reader.ReadString('\n')
+// 	input = strings.TrimSpace(input)
+// 	input = strings.ToLower(input)
+
+// 	if input == "" {
+// 		input = defualtPort
+// 		// return getPortInputAndCheck(s, defualtPort, portsArray)
+// 	}
+// 	if strings.Count(defualtPort, "") != strings.Count(input, "") {
+// 		fmt.Printf("❌ Invalid port length")
+// 		return getPortInputAndCheck(s, defualtPort, portsArray)
+// 	}
+// 	if checkArrayAlreadyExists(portsArray, input) {
+// 		fmt.Printf("❌ Port %s is arleady used, try another one", input)
+// 		return getPortInputAndCheck(s, defualtPort, portsArray)
+// 	}
+// 	if err := checkPort(input); err != nil {
+// 		fmt.Printf("❌ Port %s is : %s\n", input, err)
+// 		return getPortInputAndCheck(s, defualtPort, portsArray)
+// 	}
+// 	return input
+// }
 
 func checkPort(port string) error {
 	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
-		fmt.Println("PORT CHECK : ", err)
 		return err
 	}
-	defer ln.Close()
+	ln.Close()
 	return nil
 }
+
+//	func checkPort(port string) error {
+//		ln, err := net.Listen("tcp", ":"+port)
+//		if err != nil {
+//			fmt.Println("PORT CHECK : ", err)
+//			return err
+//		}
+//		defer ln.Close()
+//		return nil
+//	}
 func checkArrayAlreadyExists(slice []string, value string) bool {
 	for _, item := range slice {
 		if item == value {

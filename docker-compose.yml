@@ -1,17 +1,81 @@
-version: '3.8'
+version: "3.8"
+
 services:
-  mrmintchain:
+  validator:
     image: test
-    tty: true
-    stdin_open: true
-    # command : mrmintchain
-    command: ["mrmintchain", "auto-setup", "--mynode", "kamlesh021"]
-    # ports:
-    #   - "36666:36666"   # P2P
-    #   - "36667:36667"   # RPC
-    #   - "3092:3092"     # gRPC
-    #   - "3093:3093"     # gRPC-Web
-    #   - "3535:3535"     # JSON-RPC
-    # volumes:
-    #   - ./kamlesh01:/kamlesh
-    # restart: unless-stopped
+    container_name: "${MYNODE}"
+    volumes:
+      - ./${MYNODE}:/app/${MYNODE}
+      - ./${MYNODE}/.env:/app/${MYNODE}/.env
+    env_file:
+      - ./${MYNODE}/.env
+    command: mrmintchain start-node --mynode ${MYNODE}
+    ports:
+      - "${P2P_PORT}:${P2P_PORT}"
+      - "${RPC_PORT}:${RPC_PORT}"
+      - "${GRPC_PORT}:${GRPC_PORT}"
+      - "${GRPC_WEB_PORT}:${GRPC_WEB_PORT}"
+      - "${JSON_RPC_PORT}:${JSON_RPC_PORT}"
+
+
+validator2:
+    image: test
+    container_name: "${MYNODE}"
+    volumes:
+      - ./${MYNODE}:/app/${MYNODE}
+      - ./${MYNODE}/.env:/app/${MYNODE}/.env
+    env_file:
+      - ./${MYNODE}/.env
+    command: mrmintchain start-node --mynode ${MYNODE}
+    ports:
+      - "${P2P_PORT}:${P2P_PORT}"
+      - "${RPC_PORT}:${RPC_PORT}"
+      - "${GRPC_PORT}:${GRPC_PORT}"
+      - "${GRPC_WEB_PORT}:${GRPC_WEB_PORT}"
+      - "${JSON_RPC_PORT}:${JSON_RPC_PORT}"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# version: "3.9"
+
+# services:
+#   validator-setup:
+#     build: .
+#     image: test
+#     stdin_open: true
+#     tty: true
+#     environment:
+#       - MYNODE=my-validator-node
+#     command: [ "./entrypoint.sh" ]
+#     # volumes:
+#     #   - ./data:/app/data
+#     restart: "no"  # one-time job
+
+#   validator-start:
+#     build: .
+#     image: test
+#     stdin_open: true
+#     tty: true
+#     environment:
+#       - MYNODE=my-validator-node
+#     command: ["./startnode.sh"] 
+#     ports:
+#       - "26656:26656"  # p2p
+#       - "26657:26657"  # rpc
+#       - "8545:8545"    # json-rpc
+#     # volumes:
+#     #   - ./data:/app/data
+#     # restart: unless-stopped
+

@@ -52,12 +52,12 @@ func autoRunCmd() *cobra.Command {
 			// if err := gentxCmd(); err != nil {
 			// 	return fmt.Errorf("❌ gentx failed: %w", err)
 			// }
-			// if err := collectGentxsCmd(); err != nil {
-			// 	return fmt.Errorf("❌ collect gentxs failed: %w", err)
-			// }
-			if err := startNodeCmdLogic(mynode); err != nil {
-				return fmt.Errorf("❌ start node failed: %w", err)
+			if err := portsAndEnvGeneration(mynode); err != nil {
+				return fmt.Errorf("❌ collect gentxs failed: %w", err)
 			}
+			// if err := startNodeCmdLogic(mynode); err != nil {
+			// 	return fmt.Errorf("❌ start node failed: %w", err)
+			// }
 
 			fmt.Println("✅ Validator setup completed successfully.")
 			return nil

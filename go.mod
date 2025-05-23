@@ -28,6 +28,7 @@ require (
 	github.com/hashicorp/go-version v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
+	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/kamleshesporg/mrmintchain v0.0.0-20250514123227-302efbb3c815 // indirect
 	github.com/klauspost/compress v1.15.11 // indirect
 	github.com/manifoldco/promptui v0.9.0 // indirect
