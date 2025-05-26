@@ -4,10 +4,16 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
 )
 
 func main() {
+	logger := log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		Formatter:       log.TextFormatter, // This is a constant, not a struct
+	})
+	log.SetDefault(logger)
 
 	var rootCmd = &cobra.Command{
 		Use:   "mrmintchain",

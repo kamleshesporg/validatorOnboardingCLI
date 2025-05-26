@@ -1,5 +1,5 @@
 BINARY_NAME=mrmintchain
-BINARY_CHAIN_NAME=mrmintd
+BINARY_CHAIN_NAME=ethermintd
 BUILD_PATH=./cmd
 
 GOBIN ?= $(shell go env GOBIN)
