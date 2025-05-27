@@ -21,18 +21,11 @@ curl -sSLO https://raw.githubusercontent.com/kamleshesporg/validatorOnboardingCL
 echo -e "\xE2\x9C\x94 Binary files downloaded!"
 
 echo
-echo
-echo
-echo
-
 
 echo "Installing [${BINARY_NAME}] to [${INSTALL_PATH}]"
 mkdir -p ${GOBIN}
 cp ${BINARY_NAME} ${INSTALL_PATH}
-
-echo
-echo
-echo
+echo -e "\xE2\x9C\x94 Binary installed!"
 echo
 
 
@@ -44,10 +37,8 @@ echo "===> Pulling mrmintchain Image"
 image_name="docker.io/kamleshesp/mrmintchain:${image_tag}"
 
 echo "===>  ${image_name}"
-${CONTAINER_CLI} pull "${image_name}"
+echo  -e "===>  ${CONTAINER_CLI} pull ${image_name}"
 
 echo
-echo
-echo  " RUN => mrmintchain --help"
-echo
+echo  "RUN : mrmintchain --help"
 echo -e "\xE2\x9C\x94 Congratulations mrmintchain installed!"
