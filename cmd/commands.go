@@ -1,14 +1,12 @@
 package main
 
 import (
-	"bufio"
+	"encoding/json"
 	"fmt"
 	"math/big"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	// For terminal display
@@ -26,7 +24,7 @@ type ConfigCliParams struct {
 	ConfigTomlUrl   string `json:"configToml"`
 	ChindId         string `json:"chindId"`
 	MinStakeFund    int64  `json:"minStakeFund"`
-	BootNodeRpc     string `jonsL"bootNodeRpc"`
+	BootNodeRpc     string `json:"bootNodeRpc"`
 }
 
 var configCliParams ConfigCliParams
@@ -128,7 +126,6 @@ func addKeyCmdLogic(mynode string) error {
 
 	log.Printf("Key generation output: %s\n", output)
 	log.Print("🔑 Please copy your key output above. Press Enter to continue...")
-	// fmt.Scanln()
 	return nil
 }
 
@@ -162,94 +159,51 @@ func addGenesisAccountLogic(mynode string) error {
 	if err != nil {
 		log.Fatalf("Invalid bech32 address: %v", err)
 	}
-	log.Infof("Ethereum address: %s", ethAddress)
 
-	log.Infof("📲 QR Code (scan it securely): Please send %d MNT coin to your validator wallet for validator staking.", configCliParams.MinStakeFund)
 	log.Info("Its your validator wallet : ")
 	log.Infof("Default ethm1 format : %s", ethm1Address)
-	log.Infof("Converted into 0x format : %s", ethAddress)
+	log.Infof("Converted into Ethereum(0x) format : %s", ethAddress)
+
 	qrterminal.GenerateHalfBlock(ethAddress, qrterminal.L, os.Stdout)
 
-	getConfirmationForPayment("Have you send MNT?", ethm1Address)
-	// fmt.Scanln()
+	log.Infof("📲 QR Code (scan it securely): Please send %d MNT coin to your validator wallet for validator staking.", configCliParams.MinStakeFund)
 
+	getConfirmationForPayment("Have you deposited MNT?", ethm1Address)
 	return nil
 }
-func getConfirmationForPayment(s string, ethm1Address string) bool {
 
-	reader := bufio.NewReader(os.Stdin)
-
-	fmt.Printf("%s (yes/no): ", s)
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(input)
-	input = strings.ToLower(input)
-
-	if input == "yes" || input == "y" {
-		if getBalanceCmdLogic(ethm1Address) {
-			log.Info("✅ Your fund deposited!")
-			return true
-		} else {
-			log.Error("❌ Balance not deposited yet, Please try again.")
-			getConfirmationForPayment(s, ethm1Address)
-		}
-		// Perform actions for "yes"
-	} else if input == "no" || input == "n" {
-		fmt.Println("Please deposit mnt first then you can proceed")
-		getConfirmationForPayment(s, ethm1Address)
-		// Perform actions for "no" or exit
-	} else {
-		log.Info("Invalid input. Please enter 'yes' or 'no'.")
-		// Handle invalid input, possibly re-prompting the user
-		getConfirmationForPayment(s, ethm1Address)
-	}
-
-	return true
-}
-
-// Define a struct for items within the 'balances' array
-type BalanceItem struct {
-	Amount string `yaml:"amount"` // Ensure the field name matches your struct (e.g., Amount)
-	Denom  string `yaml:"denom"`
-}
-
-// Updated struct for the overall YAML output
-type CmdOutput struct {
-	Balances   []BalanceItem `yaml:"balances"`
-	Pagination struct {
-		NextKey interface{} `yaml:"next_key"`
-		Total   string      `yaml:"total"`
-	} `yaml:"pagination"`
-}
-
-func getBalanceCmdLogic(walletEthmAddress string) bool {
+func getBalanceCmdLogic(walletEthmAddress string) (bool, int64) {
 	bootRpc := configCliParams.BootNodeRpc
 	if bootRpc == "" {
+		bootRpc = getEnvOrFail("BOOT_NODE_RPC")
+	}
+	if bootRpc == "" {
 		log.Errorf("Boot node rpc not provided")
-		return false
+		return false, 0
 	}
 	output, err := runCmdCaptureOutput("ethermintd", "query", "bank", "balances", walletEthmAddress, "--node", bootRpc)
 	if err != nil {
 		log.Errorf("Get balance command failed: %s\nOutput: %s", err, output)
-		return false
+		return false, 0
 	}
 	var cResp CmdOutput
 
 	err = yaml.Unmarshal([]byte(output), &cResp)
 	if err != nil {
 		log.Errorf("Get balance command failed: %s", err)
-		return false
+		return false, 0
 	}
 
 	if len(cResp.Balances) == 0 {
 		log.Error("The balances array is indeed empty, as expected. Please deposit fund then proceed")
-		return false
+		return false, 0
 	} else {
 
 		bigAmount := new(big.Int)
 		bigAmount, ok := bigAmount.SetString(cResp.Balances[0].Amount, 10)
 		if !ok {
 			log.Error("Invalid number")
-			return false
+			return false, 0
 		}
 
 		// Divide by Wei (as big.Int)
@@ -258,23 +212,20 @@ func getBalanceCmdLogic(walletEthmAddress string) bool {
 
 		// This block would only execute if balances was not empty.
 		log.Infof("💸 The balances is : %d %s", exactBalance, cResp.Balances[0].Denom)
-		if exactBalance.Int64() < configCliParams.MinStakeFund {
-			log.Errorf(" 😧 The balances is less then mininmum deposit amount %d mnt, Please deposit more", configCliParams.MinStakeFund)
-			return false
-		}
+
+		return true, exactBalance.Int64()
 
 	}
-	return true
 }
 
-func startNodeCmd() *cobra.Command {
+func portsAndEnvGenerationCmd() *cobra.Command {
 	var mynode string
 
 	cmd := &cobra.Command{
-		Use:   "start-node",
-		Short: "Start the Ethermint node",
+		Use:   "port-set",
+		Short: "To start node, ports and env generation",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return startNodeCmdLogic(mynode)
+			return portsAndEnvGenerationLogic(mynode)
 		},
 	}
 	cmd.Flags().StringVar(&mynode, "mynode", "", "Please enter your node name")
@@ -282,80 +233,46 @@ func startNodeCmd() *cobra.Command {
 	return cmd
 }
 
-// func startNodeCmdLogic(mynode string) error {
-// 	portsArray := []string{}
-
-// 	port1 := getPortInputAndCheck("\n 👉 Please enter 5 digit port for p2p-laddr:", "26666", portsArray)
-// 	portsArray = append(portsArray, port1)
-// 	p2pladdr := "tcp://0.0.0.0:" + port1
-// 	fmt.Println("    ✅ p2p-laddr:", p2pladdr)
-
-// 	port2 := getPortInputAndCheck("\n 👉 Please enter 5 digit port for rpc-laddr:", "26667", portsArray)
-// 	portsArray = append(portsArray, port2)
-// 	rpcladdr := "tcp://0.0.0.0:" + port2
-// 	fmt.Println("    ✅ rpc-laddr:", rpcladdr)
-
-// 	port3 := getPortInputAndCheck("\n 👉 Please enter 4 digit port for grpc-address:", "9092", portsArray)
-// 	portsArray = append(portsArray, port3)
-// 	grpcAddress := "0.0.0.0:" + port3
-// 	fmt.Println("    ✅ grpc-address:", grpcAddress)
-
-// 	port4 := getPortInputAndCheck("\n 👉 Please enter 4 digit port for grpc-web-address:", "9093", portsArray)
-// 	portsArray = append(portsArray, port4)
-// 	grpcwebaddress := "0.0.0.0:" + port4
-// 	fmt.Println("    ✅ grpc-web-address:", grpcwebaddress)
-
-// 	port5 := getPortInputAndCheck("\n 👉 Please enter 4 digit port for json-rpc-address:", "8547", portsArray)
-// 	jsonrpcaddress := "0.0.0.0:" + port5
-// 	fmt.Println("    ✅ json-rpc-address:", jsonrpcaddress)
-
-// 	err := runCmd("ethermintd", "start",
-// 		"--home", mynode,
-// 		"--p2p.laddr", p2pladdr,
-// 		"--rpc.laddr", rpcladdr,
-// 		"--grpc.address", grpcAddress,
-// 		"--grpc-web.address", grpcwebaddress,
-// 		"--json-rpc.address", jsonrpcaddress,
-// 		"--p2p.persistent_peers", configCliParams.PersistentPeers)
-// 	if err != nil {
-// 		return fmt.Errorf("node start command failed: %w", err)
-// 	}
-// 	fmt.Printf("Node Started!!!!!!!!!")
-// 	return err
-// }
-
-func portsAndEnvGeneration(mynode string) error {
+func portsAndEnvGenerationLogic(mynode string) error {
 	fmt.Print("\n Please enter port - \n")
 	portsArray := []string{}
 
 	p2p := getPortInputAndCheck("P2P_PORT", "26666", portsArray)
 	portsArray = append(portsArray, p2p)
+	log.Infof("✅ p2p-laddr: %s", p2p)
 
 	rpc := getPortInputAndCheck("RPC_PORT", "26667", portsArray)
 	portsArray = append(portsArray, rpc)
+	log.Infof("✅ rpc-laddr: %s", rpc)
 
 	grpc := getPortInputAndCheck("GRPC_PORT", "9092", portsArray)
 	portsArray = append(portsArray, grpc)
+	log.Infof("✅ grpc-address: %s", grpc)
 
 	grpcWeb := getPortInputAndCheck("GRPC_WEB_PORT", "9093", portsArray)
 	portsArray = append(portsArray, grpcWeb)
+	log.Infof("✅ grpc-web-address: %s", grpcWeb)
 
 	jsonRpc := getPortInputAndCheck("JSON_RPC_PORT", "8547", portsArray)
+	log.Infof("✅ json-rpc-address: %s", jsonRpc)
 
 	// Construct .env content
+
 	envContent := fmt.Sprintf(`
 		P2P_PORT=%s
 		RPC_PORT=%s
 		GRPC_PORT=%s
 		GRPC_WEB_PORT=%s
 		JSON_RPC_PORT=%s
-		PERSISTENT_PEERS=%s`,
+		PERSISTENT_PEERS=%s
+		BOOT_NODE_RPC=%s`,
 		p2p,
 		rpc,
 		grpc,
 		grpcWeb,
 		jsonRpc,
 		configCliParams.PersistentPeers,
+		configCliParams.BootNodeRpc,
 	)
 
 	// Path to write .env
@@ -376,6 +293,21 @@ func portsAndEnvGeneration(mynode string) error {
 
 	log.Infof("✅ .env file generated at %s\n", envPath)
 	return err
+}
+
+func startNodeCmd() *cobra.Command {
+	var mynode string
+
+	cmd := &cobra.Command{
+		Use:   "start-node",
+		Short: "Start the Ethermint node",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return startNodeCmdLogic(mynode)
+		},
+	}
+	cmd.Flags().StringVar(&mynode, "mynode", "", "Please enter your node name")
+	cmd.MarkFlagRequired("mynode")
+	return cmd
 }
 
 func startNodeCmdLogic(mynode string) error {
@@ -402,15 +334,21 @@ func startNodeCmdLogic(mynode string) error {
 	jsonRpcAddress := "0.0.0.0:" + jsonRpcPort
 
 	log.Info("✅ Using Ports from ENV:")
-	log.Info("  - p2p-laddr: %s", p2pLaddr)
-	log.Info("  - rpc-laddr: %s", rpcLaddr)
-	log.Info("  - grpc-address: %s", grpcAddress)
-	log.Info("  - grpc-web-address: %s", grpcWebAddress)
-	log.Info("  - json-rpc-address: %s", jsonRpcAddress)
-	log.Info("  - persistent-peers: %s \n", PersistentPeers)
+	log.Infof("  - p2p-laddr: %s", p2pLaddr)
+	log.Infof("  - rpc-laddr: %s", rpcLaddr)
+	log.Infof("  - grpc-address: %s", grpcAddress)
+	log.Infof("  - grpc-web-address: %s", grpcWebAddress)
+	log.Infof("  - json-rpc-address: %s", jsonRpcAddress)
+	log.Infof("  - persistent-peers: %s \n", PersistentPeers)
 
 	// Run the command with ports from ENV
-	err = runCmd("ethermintd", "start",
+	err = runCmd("docker", "run", "-d", "-it", "--name", mynode, "-v", fmt.Sprintf("%s:/app/%s", mynode, mynode),
+		"-p", p2pPort+":"+p2pPort, // P2P port
+		"-p", rpcPort+":"+rpcPort, // RPC port
+		"-p", grpcPort+":"+grpcPort, // Ethereum JSON-RPC
+		"-p", grpcWebPort+":"+grpcWebPort, // gRPC
+		"-p", jsonRpcPort+":"+jsonRpcPort, // gRPC-Web
+		"test", "ethermintd", "start",
 		"--home", mynode,
 		"--p2p.laddr", p2pLaddr,
 		"--rpc.laddr", rpcLaddr,
@@ -424,71 +362,299 @@ func startNodeCmdLogic(mynode string) error {
 	}
 
 	log.Info("🚀 Node started successfully!")
+	log.Infof("🚀 Now you can check logs, stop, start, remove container with following commands: ")
+	log.Infof("===> docker logs %s", mynode)
+	log.Infof("===> docker stop %s", mynode)
+	log.Infof("===> docker start %s", mynode)
+	log.Infof("===> docker rm %s", mynode)
 	return nil
 }
 
-func getEnvOrFail(key string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		log.Fatalf("❌ Missing required environment variable: %s", key)
+func stopNodeCmd() *cobra.Command {
+	var mynode string
+
+	cmd := &cobra.Command{
+		Use:   "stop-node",
+		Short: "Stop the Ethermint node",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCmd("docker", "stop", mynode)
+		},
 	}
-	return value
+	cmd.Flags().StringVar(&mynode, "mynode", "", "Please enter your node name")
+	cmd.MarkFlagRequired("mynode")
+	return cmd
 }
 
-func getPortInputAndCheck(prompt string, defaultPort string, existing []string) string {
-	reader := bufio.NewReader(os.Stdin)
+func restartNodeCmd() *cobra.Command {
+	var mynode string
 
-	for {
-		fmt.Printf("%s [%s]: ", prompt, defaultPort)
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
-
-		if input == "" {
-			input = defaultPort
-		}
-
-		// Check numeric
-		if _, err := strconv.Atoi(input); err != nil {
-			log.Error("❌ Invalid input. Please enter numeric port.")
-			continue
-		}
-
-		// Check port length (4 or 5 digits)
-		if len(input) != 4 && len(input) != 5 {
-			log.Error("❌ Port must be 4 or 5 digits.")
-			continue
-		}
-
-		// Check for duplicates
-		if checkArrayAlreadyExists(existing, input) {
-			log.Error("❌ Port %s already used.\n", input)
-			continue
-		}
-
-		// Check availability
-		if err := checkPort(input); err != nil {
-			log.Error("❌ Port %s not available: %s\n", input, err)
-			continue
-		}
-
-		return input
+	cmd := &cobra.Command{
+		Use:   "restart-node",
+		Short: "Re-start the Ethermint node",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCmd("docker", "start", mynode)
+		},
 	}
+	cmd.Flags().StringVar(&mynode, "mynode", "", "Please enter your node name")
+	cmd.MarkFlagRequired("mynode")
+	return cmd
 }
 
-func checkPort(port string) error {
-	ln, err := net.Listen("tcp", ":"+port)
+func getValidatorBalanceCmd() *cobra.Command {
+	var mynode string
+
+	cmd := &cobra.Command{
+		Use:   "validator-balance",
+		Short: "Validator balance from Ethermint node",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return getValidatorBalanceCmdLogic(mynode)
+		},
+	}
+	cmd.Flags().StringVar(&mynode, "mynode", "", "Please enter your node name")
+	cmd.MarkFlagRequired("mynode")
+	return cmd
+}
+
+func getValidatorBalanceCmdLogic(mynode string) error {
+	//Load env
+	err := godotenv.Load(filepath.Join(mynode, ".env"))
+	if err != nil {
+		log.Fatalf("❌ Failed to load .env: %v", err)
+	}
+
+	fmt.Println()
+	getAddr := exec.Command("ethermintd", "keys", "show", mynode, "-a", "--home", mynode, "--keyring-backend", "test")
+	addrOut, err := getAddr.Output()
 	if err != nil {
 		return err
 	}
-	ln.Close()
-	return nil
+	ethm1Address := strings.TrimSpace(string(addrOut))
+	getBalanceCmdLogic(ethm1Address)
+	return err
 }
 
-func checkArrayAlreadyExists(slice []string, value string) bool {
-	for _, item := range slice {
-		if item == value {
-			return true
-		}
+func stakeFundCmd() *cobra.Command {
+	var mynode string
+
+	cmd := &cobra.Command{
+		Use:   "stake",
+		Short: "Stake the Ethermint node",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return checkBlockBeforeStake(mynode)
+		},
 	}
-	return false
+	cmd.Flags().StringVar(&mynode, "mynode", "", "Please enter your node name")
+	cmd.MarkFlagRequired("mynode")
+	return cmd
+}
+
+type BlockResponse struct {
+	Block struct {
+		Header struct {
+			Height string `json:"height"`
+		} `json:"header"`
+	} `json:"block"`
+}
+
+func checkBlockBeforeStake(mynode string) error {
+	// Load the .env file
+
+	err := godotenv.Load(filepath.Join(mynode, ".env"))
+	if err != nil {
+		log.Fatalf("❌ Failed to load .env: %v", err)
+	}
+	rpcPort := getEnvOrFail("RPC_PORT")
+	bootRpc := getEnvOrFail("BOOT_NODE_RPC")
+
+	outputLocal, err := runCmdCaptureOutput("docker", "exec", "-i", mynode, "ethermintd", "query", "block", "--node", "http://localhost:"+rpcPort)
+	if err != nil {
+		log.Errorf("Query block command error : %s \n", outputLocal)
+		return err
+	}
+
+	outputBootNode, err := runCmdCaptureOutput("docker", "exec", "-i", mynode, "ethermintd", "query", "block", "--node", bootRpc)
+	if err != nil {
+		log.Errorf("Query block command error : %s \n", outputBootNode)
+		return err
+	}
+
+	var res BlockResponse
+	err = json.Unmarshal([]byte(outputBootNode), &res)
+	if err != nil {
+		panic(err)
+	}
+
+	bootBlockInt := new(big.Int)
+	bootBlockInt, ok := bootBlockInt.SetString(res.Block.Header.Height, 10)
+	if !ok {
+		log.Error("Invalid number")
+	}
+
+	var resLocal BlockResponse
+	err = json.Unmarshal([]byte(outputLocal), &resLocal)
+	if err != nil {
+		panic(err)
+	}
+
+	localBlockInt := new(big.Int)
+	localBlockInt, ok = localBlockInt.SetString(resLocal.Block.Header.Height, 10)
+	if !ok {
+		log.Error("Invalid number")
+	}
+
+	log.Infof("Boot node latest block height: %s", bootBlockInt)
+	log.Infof("Your node latest block height: %s", localBlockInt)
+
+	bootBlockInt = new(big.Int).Sub(bootBlockInt, big.NewInt(5))
+
+	if localBlockInt.Int64() < bootBlockInt.Int64() {
+		log.Error("Please wait for complete syncing then stake fund for validator")
+	}
+	log.Info("\xE2\x9C\x94 The node is properly synced with the bootnode!")
+
+	return stakeFundCmdLogic(mynode)
+}
+
+type DepositParams struct {
+	MinDeposit []struct {
+		Amount string `yaml:"amount"`
+		Denom  string `yaml:"denom"`
+	} `yaml:"min_deposit"`
+}
+
+func stakeFundCmdLogic(mynode string) error {
+	rpcPort := getEnvOrFail("RPC_PORT")
+	// bootRpc := getEnvOrFail("BOOT_NODE_RPC")
+	fmt.Println()
+	output, err := runCmdCaptureOutput("docker", "exec", "-i", mynode, "ethermintd", "query", "gov", "param", "deposit", "--node", "tcp://localhost:"+rpcPort)
+	if err != nil {
+		log.Fatalf("failed to get deposit params: %v", err)
+	}
+	var cResp DepositParams
+
+	err = yaml.Unmarshal([]byte(output), &cResp)
+	if err != nil {
+		log.Errorf("Get balance command failed: %s", err)
+	}
+
+	log.Infof("Minimum Deposit: %s%s", cResp.MinDeposit[0].Amount, cResp.MinDeposit[0].Denom)
+	fmt.Println()
+
+	getAddr := exec.Command("ethermintd", "keys", "show", mynode, "-a", "--home", mynode, "--keyring-backend", "test")
+	addrOut, err := getAddr.Output()
+	if err != nil {
+		return err
+	}
+	ethm1Address := strings.TrimSpace(string(addrOut))
+	_, balance := getBalanceCmdLogic(ethm1Address)
+	ethAddress, _ := Bech32ToEthAddress(ethm1Address)
+	log.Printf("balance %d Of wallet : %s", balance, ethAddress)
+
+	pubkey, err := runCmdCaptureOutput("docker", "exec", "-i", mynode, "ethermintd", "tendermint", "show-validator", "--home", mynode)
+	if err != nil {
+		log.Fatalf("Failed to get pubkey: %v", err)
+	}
+	pubkey = strings.TrimSpace(pubkey)
+
+	output, err = runCmdCaptureOutput("docker", "exec", "-i", mynode,
+		"ethermintd",
+		"tx", "staking", "create-validator",
+		"--amount", cResp.MinDeposit[0].Amount+""+cResp.MinDeposit[0].Denom,
+		"--pubkey", pubkey,
+		"--home", mynode,
+		"--moniker", mynode,
+		// "--chain-id","os_9000-1",
+		"--commission-rate=0.10",
+		"--commission-max-rate=0.20",
+		"--commission-max-change-rate=0.01",
+		"--min-self-delegation=1",
+		"--from", mynode,
+		"--keyring-backend=test",
+		"--home", mynode, // double-check this format
+		"--node", "tcp://localhost:"+rpcPort,
+		"--gas-prices", "7aphoton",
+		"--gas", "auto",
+		"--gas-adjustment", "1.1",
+		"--yes",
+	)
+	if err != nil {
+		log.Errorf("Stake command failed : %s", output)
+		return err
+	}
+	log.Infof("Stake Output : %s", output)
+	return err
+}
+
+func getValidatorStatusCmd() *cobra.Command {
+	var mynode string
+
+	cmd := &cobra.Command{
+		Use:   "validator-info",
+		Short: "Validator info for Ethermint node",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return getValidatorStatusCmdLogic(mynode)
+		},
+	}
+	cmd.Flags().StringVar(&mynode, "mynode", "", "Please enter your node name")
+	cmd.MarkFlagRequired("mynode")
+	return cmd
+}
+
+type ValidatorDevKey []struct {
+	Address string `yaml:"address"`
+}
+type ValidatorDevInfo struct {
+	Status string `yaml:"status"`
+}
+
+// type DepositParams struct {
+// 	MinDeposit []struct {
+// 		Amount string `yaml:"amount"`
+// 		Denom  string `yaml:"denom"`
+// 	} `yaml:"min_deposit"`
+// }
+
+func getValidatorStatusCmdLogic(mynode string) error {
+
+	// Load the .env file
+
+	err := godotenv.Load(filepath.Join(mynode, ".env"))
+	if err != nil {
+		log.Fatalf("❌ Failed to load .env: %v", err)
+	}
+	rpcPort := getEnvOrFail("RPC_PORT")
+	// bootRpc := getEnvOrFail("BOOT_NODE_RPC")
+
+	getAddr := exec.Command("ethermintd", "keys", "show", mynode, "--bech", "val", "--home", mynode, "--keyring-backend", "test")
+	output, err := getAddr.Output()
+	if err != nil {
+		log.Errorf("Key show command failed : %s", string(output))
+	}
+	var cResp ValidatorDevKey
+
+	err = yaml.Unmarshal(output, &cResp)
+	if err != nil {
+		log.Errorf("Get balance command failed: %s", err)
+	}
+
+	outputInfo, err := runCmdCaptureOutput("docker", "exec", "-i", mynode, "ethermintd", "query", "staking", "validator", cResp[0].Address, "--node", "http://localhost:"+rpcPort, "--output", "json")
+	if err != nil {
+		log.Fatalf("Failed to get validator info : %s", outputInfo)
+		return err
+	}
+
+	var cRespp ValidatorDevInfo
+	err = yaml.Unmarshal([]byte(outputInfo), &cRespp)
+	if err != nil {
+		log.Errorf("Get balance command failed: %s", err)
+	}
+	log.Infof("Validator details in JSON : %s", outputInfo)
+	fmt.Println()
+	if cRespp.Status == "BOND_STATUS_BONDED" {
+		log.Info("\xE2\x9C\x94 Validator is active!")
+	}
+	if cRespp.Status == "BOND_STATUS_UNBONDED" {
+		log.Info("Validator is de-active!")
+	}
+	return err
 }

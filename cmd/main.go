@@ -25,6 +25,12 @@ func main() {
 		addKeyCmd(),
 		addGenesisAccountCmd(),
 		startNodeCmd(),
+		portsAndEnvGenerationCmd(),
+		stopNodeCmd(),
+		restartNodeCmd(),
+		stakeFundCmd(),
+		getValidatorStatusCmd(),
+		getValidatorBalanceCmd(),
 		autoRunCmd(),
 	)
 
@@ -55,15 +61,9 @@ func autoRunCmd() *cobra.Command {
 			if err := addGenesisAccountLogic(mynode); err != nil {
 				return fmt.Errorf("❌ add genesis account failed: %w", err)
 			}
-			// if err := gentxCmd(); err != nil {
-			// 	return fmt.Errorf("❌ gentx failed: %w", err)
-			// }
-			if err := portsAndEnvGeneration(mynode); err != nil {
+			if err := portsAndEnvGenerationLogic(mynode); err != nil {
 				return fmt.Errorf("❌ collect gentxs failed: %w", err)
 			}
-			// if err := startNodeCmdLogic(mynode); err != nil {
-			// 	return fmt.Errorf("❌ start node failed: %w", err)
-			// }
 
 			fmt.Println("✅ Validator setup completed successfully.")
 			return nil
@@ -73,5 +73,3 @@ func autoRunCmd() *cobra.Command {
 	cmd.MarkFlagRequired("mynode")
 	return cmd
 }
-
-// ethermintd start --home kamleshnode001 --p2p.laddr tcp://0.0.0.0:46666 --rpc.laddr tcp://0.0.0.0:46667 --grpc.address 0.0.0.0:4092 --grpc-web.address 0.0.0.0:4093 --json-rpc.address 0.0.0.0:4545 --p2p.persistent_peers 29996f0c7cc853d551e280a8162480fcd684f0b8@127.0.0.1:26656
