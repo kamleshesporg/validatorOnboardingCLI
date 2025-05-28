@@ -39,10 +39,6 @@ image_name="docker.io/kamleshesp/mrmintchain:${image_tag}"
 echo "===>  ${image_name}"
 echo  -e "===>  ${CONTAINER_CLI} pull ${image_name}"
 
-export IMAGE_NAME = "${image_name}"
-# Confirm it's exported
-echo "✅ Exported IMAGE_NAME=$IMAGE_NAME"
-
 echo
 echo  "RUN : mrmintchain --help"
 echo -e "\xE2\x9C\x94 Congratulations mrmintchain installed!"
