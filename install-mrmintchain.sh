@@ -3,7 +3,7 @@
 GOBIN="$(go env GOBIN -1)"
 
 if [ -z "$GOBIN" ]; then
-    GOBIN="$(go env GOPATH -1)"
+    GOBIN="$(go env GOPATH -1)/bin"
 fi 
 
 BINARY_NAME="mrmintchain"
