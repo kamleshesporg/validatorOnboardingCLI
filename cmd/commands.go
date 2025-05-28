@@ -126,6 +126,7 @@ func addKeyCmdLogic(mynode string) error {
 
 	log.Printf("Key generation output: %s\n", output)
 	log.Print("🔑 Please copy your key output above. Press Enter to continue...")
+	fmt.Scanln()
 	return nil
 }
 
@@ -212,6 +213,7 @@ func getBalanceCmdLogic(walletEthmAddress string) (bool, int64) {
 
 		// This block would only execute if balances was not empty.
 		log.Infof("💸 The balances is : %d %s", exactBalance, cResp.Balances[0].Denom)
+		log.Infof("💸 The Exact balances is : %s %s", cResp.Balances[0].Amount, cResp.Balances[0].Denom)
 
 		return true, exactBalance.Int64()
 
@@ -341,14 +343,19 @@ func startNodeCmdLogic(mynode string) error {
 	log.Infof("  - json-rpc-address: %s", jsonRpcAddress)
 	log.Infof("  - persistent-peers: %s \n", PersistentPeers)
 
+	imageName := os.Getenv("IMAGE_NAME")
+	if imageName == "" {
+		log.Fatal("❌ IMAGE_NAME is not set in environment")
+	}
+
 	// Run the command with ports from ENV
-	err = runCmd("docker", "run", "-d", "-it", "--name", mynode, "-v", fmt.Sprintf("%s:/app/%s", mynode, mynode),
+	err = runCmd("docker", "run", "-d", "-it", "--name", mynode, "-v", fmt.Sprintf("./%s:/app/%s", mynode, mynode),
 		"-p", p2pPort+":"+p2pPort, // P2P port
 		"-p", rpcPort+":"+rpcPort, // RPC port
 		"-p", grpcPort+":"+grpcPort, // Ethereum JSON-RPC
 		"-p", grpcWebPort+":"+grpcWebPort, // gRPC
 		"-p", jsonRpcPort+":"+jsonRpcPort, // gRPC-Web
-		"test", "ethermintd", "start",
+		imageName, "ethermintd", "start",
 		"--home", mynode,
 		"--p2p.laddr", p2pLaddr,
 		"--rpc.laddr", rpcLaddr,
@@ -509,6 +516,7 @@ func checkBlockBeforeStake(mynode string) error {
 
 	if localBlockInt.Int64() < bootBlockInt.Int64() {
 		log.Error("Please wait for complete syncing then stake fund for validator")
+		return err
 	}
 	log.Info("\xE2\x9C\x94 The node is properly synced with the bootnode!")
 
@@ -555,6 +563,23 @@ func stakeFundCmdLogic(mynode string) error {
 		log.Fatalf("Failed to get pubkey: %v", err)
 	}
 	pubkey = strings.TrimSpace(pubkey)
+	if !yesNo("Are you want to proceed now for staking?") {
+		log.Info("Staking process cancelled!")
+		return err
+	}
+
+	commissionRate := getStakingInputs("Please enter commission rate", "0.10")
+	log.Infof("✅ commission-rate: %s", commissionRate)
+
+	commissionMaxRate := getStakingInputs("Please enter commission max rate", "0.20")
+	log.Infof("✅ commission-max-rate: %s", commissionMaxRate)
+
+	commissionMaxChangeRate := getStakingInputs("Please enter commission max change rate", "0.01")
+	log.Infof("✅ commission-max-change-rate: %s", commissionMaxChangeRate)
+
+	fmt.Println()
+	log.Print("🔑 Your staking process almost done. Press Enter to continue...")
+	fmt.Scanln()
 
 	output, err = runCmdCaptureOutput("docker", "exec", "-i", mynode,
 		"ethermintd",
@@ -564,9 +589,9 @@ func stakeFundCmdLogic(mynode string) error {
 		"--home", mynode,
 		"--moniker", mynode,
 		// "--chain-id","os_9000-1",
-		"--commission-rate=0.10",
-		"--commission-max-rate=0.20",
-		"--commission-max-change-rate=0.01",
+		"--commission-rate", commissionRate,
+		"--commission-max-rate", commissionMaxRate,
+		"--commission-max-change-rate", commissionMaxChangeRate,
 		"--min-self-delegation=1",
 		"--from", mynode,
 		"--keyring-backend=test",
@@ -582,6 +607,8 @@ func stakeFundCmdLogic(mynode string) error {
 		return err
 	}
 	log.Infof("Stake Output : %s", output)
+	fmt.Println()
+	log.Infof("You can copy staking tx hash and check details on explorer or use hash detail commands")
 	return err
 }
 
@@ -606,13 +633,6 @@ type ValidatorDevKey []struct {
 type ValidatorDevInfo struct {
 	Status string `yaml:"status"`
 }
-
-// type DepositParams struct {
-// 	MinDeposit []struct {
-// 		Amount string `yaml:"amount"`
-// 		Denom  string `yaml:"denom"`
-// 	} `yaml:"min_deposit"`
-// }
 
 func getValidatorStatusCmdLogic(mynode string) error {
 

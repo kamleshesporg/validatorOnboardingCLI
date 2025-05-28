@@ -23,7 +23,7 @@ func getConfirmationForPayment(s string, ethm1Address string) bool {
 	if input == "yes" || input == "y" {
 		_, exactBalance := getBalanceCmdLogic(ethm1Address)
 		if exactBalance < configCliParams.MinStakeFund {
-			log.Errorf(" 😧 The balances is less then mininmum deposit amount %d mnt, Please deposit more", configCliParams.MinStakeFund)
+			log.Errorf("😧 The balances is less then mininmum deposit amount %d mnt, Please deposit more", configCliParams.MinStakeFund)
 
 			log.Error("❌ Balance not deposited yet, Please try again.")
 			getConfirmationForPayment(s, ethm1Address)
@@ -124,4 +124,31 @@ func checkArrayAlreadyExists(slice []string, value string) bool {
 		}
 	}
 	return false
+}
+
+func getStakingInputs(prompt string, defaultValue string) string {
+	reader := bufio.NewReader(os.Stdin)
+
+	for {
+		fmt.Printf("%s [%s]: ", prompt, defaultValue)
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(input)
+
+		if input == "" {
+			input = defaultValue
+		}
+
+		// Check numeric
+		if _, err := strconv.ParseFloat(input, 64); err != nil {
+			log.Error("❌ Invalid input. Please enter numeric port.")
+			continue
+		}
+
+		// // Check port length (4 or 5 digits)
+		// if len(input) != 4 && len(input) != 5 {
+		// 	log.Error("❌ Port must be 4 or 5 digits.")
+		// 	continue
+		// }
+		return input
+	}
 }
