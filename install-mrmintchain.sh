@@ -15,8 +15,12 @@ echo "Mrmintchain Binary files downloading..."
 echo "1. mrmintchain binary fetching..."
 curl -sSLO https://raw.githubusercontent.com/kamleshesporg/validatorOnboardingCLI/main/mrmintchain
 
+chmod +x mrmintchain
+
 echo "2. mrmintd binary fetching..."
 curl -sSLO https://raw.githubusercontent.com/kamleshesporg/validatorOnboardingCLI/main/chain/ethermintd
+
+chmod +x ethermintd
 
 echo -e "\xE2\x9C\x94 Binary files downloaded!"
 
