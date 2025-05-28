@@ -321,11 +321,6 @@ func startNodeCmdLogic(mynode string) error {
 		log.Fatalf("❌ Failed to load .env: %v", err)
 	}
 
-	err = godotenv.Load(filepath.Join(".env"))
-	if err != nil {
-		log.Fatalf("❌ Failed to load .env: %v", err)
-	}
-
 	// Read from environment variables (set during auto-setup)
 	p2pPort := getEnvOrFail("P2P_PORT")
 	rpcPort := getEnvOrFail("RPC_PORT")
@@ -348,11 +343,10 @@ func startNodeCmdLogic(mynode string) error {
 	log.Infof("  - json-rpc-address: %s", jsonRpcAddress)
 	log.Infof("  - persistent-peers: %s \n", PersistentPeers)
 
-	imageName := getEnvOrFail("IMAGE_NAME")
+	imageName := os.Getenv("IMAGE_NAME")
 	if imageName == "" {
 		log.Fatal("❌ IMAGE_NAME is not set in environment")
 	}
-	log.Infof("imageName : %s %s", imageName, filepath.Join(".env"))
 
 	// Run the command with ports from ENV
 	err = runCmd("docker", "run", "-d", "-it", "--name", mynode, "-v", fmt.Sprintf("./%s:/app/%s", mynode, mynode),

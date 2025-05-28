@@ -38,10 +38,16 @@ image_tag=latest
  
 
 echo "===> Pulling mrmintchain Image"
-image_name="docker.io/kamleshesp/mrmintchain:${image_tag}"
+image_name="kamleshesp/mrmintchain:${image_tag}"
 
 echo "===>  ${image_name}"
-echo  -e "===>  ${CONTAINER_CLI} pull ${image_name}"
+echo  -e "===>  ${CONTAINER_CLI} pull docker.io/${image_name}"
+
+unset IMAGE_NAME
+export IMAGE_NAME="$image_name"
+
+# Confirm it's exported
+echo "✅ Exported IMAGE_NAME=$IMAGE_NAME"
 
 echo
 echo  "RUN : mrmintchain --help"
