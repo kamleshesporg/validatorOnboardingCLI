@@ -13,12 +13,12 @@ INSTALL_PATH="${GOBIN}/${BINARY_NAME}"
 echo "Mrmintchain Binary files downloading..."
 
 echo "1. mrmintchain binary fetching..."
-curl -sSLO https://raw.githubusercontent.com/kamleshesporg/validatorOnboardingCLI/main/mrmintchain
+curl --progress-bar -LO https://raw.githubusercontent.com/kamleshesporg/validatorOnboardingCLI/main/mrmintchain
 
 chmod +x mrmintchain
 
 echo "2. mrmintd binary fetching..."
-curl -sSLO https://raw.githubusercontent.com/kamleshesporg/validatorOnboardingCLI/main/chain/ethermintd
+curl --progress-bar -LO https://raw.githubusercontent.com/kamleshesporg/validatorOnboardingCLI/main/chain/ethermintd
 
 chmod +x ethermintd
 
@@ -43,11 +43,11 @@ image_name="kamleshesp/mrmintchain:${image_tag}"
 echo "===>  ${image_name}"
 echo  -e "===>  ${CONTAINER_CLI} pull docker.io/${image_name}"
 
-unset IMAGE_NAME
-export IMAGE_NAME="$image_name"
+cat <<EOF > .env
+IMAGE_NAME=$image_name
+EOF
 
-# Confirm it's exported
-echo "✅ Exported IMAGE_NAME=$IMAGE_NAME"
+echo "✅ .env file created!"
 
 echo
 echo  "RUN : mrmintchain --help"
