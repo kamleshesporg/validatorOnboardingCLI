@@ -98,3 +98,20 @@ Push image on registry :
 		    docker tag test:latest docker.io/kamleshesp/mrmintchain:latest
 
 			docker push docker.io/kamleshesp/mrmintchain:latest
+
+
+
+
+
+
+
+
+
+			
+
+// ===========================
+For windows mrmintchain - 
+GOOS=windows GOARCH=amd64 go build -o mrmintchain.exe
+
+For windows ethermintd - 
+GOOS=windows GOARCH=amd64 go build -o build/ethermintd.exe ./cmd/ethermintd

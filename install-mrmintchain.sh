@@ -41,7 +41,11 @@ echo "===> Pulling mrmintchain Image"
 image_name="kamleshesp/mrmintchain:${image_tag}"
 
 echo "===>  ${image_name}"
-echo  -e "===>  ${CONTAINER_CLI} pull docker.io/${image_name}"
+# echo  -e "===>  ${CONTAINER_CLI} pull docker.io/${image_name}"
+if ! ${CONTAINER_CLI} pull docker.io/${image_name}; then
+    echo "❌ Failed to pull image: ${image_name}"
+    exit 1
+fi
 
 cat <<EOF > .env
 IMAGE_NAME=$image_name
