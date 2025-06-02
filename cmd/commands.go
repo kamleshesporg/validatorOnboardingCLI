@@ -27,6 +27,8 @@ type ConfigCliParams struct {
 	BootNodeRpc     string `json:"bootNodeRpc"`
 }
 
+var Mrmintd = "./ethermintd"
+
 var configCliParams ConfigCliParams
 
 func runCmd(command string, args ...string) error {
@@ -82,7 +84,7 @@ func initNodeLogic(mynode string) error {
 		}
 	}
 
-	if output, err := runCmdCaptureOutput("ethermintd", "init", validatorName, "--chain-id", configCliParams.ChindId, "--home", mynode); err != nil {
+	if output, err := runCmdCaptureOutput(Mrmintd, "init", validatorName, "--chain-id", configCliParams.ChindId, "--home", mynode); err != nil {
 		log.Errorf("init command failed: %s", output)
 		return err
 	}
@@ -118,7 +120,7 @@ func addKeyCmdLogic(mynode string) error {
 	validatorName := mynode
 	mynode = "" + mynode
 
-	output, err := runCmdCaptureOutput("ethermintd", "keys", "add", validatorName, "--algo", "eth_secp256k1", "--keyring-backend", "test", "--home", mynode)
+	output, err := runCmdCaptureOutput(Mrmintd, "keys", "add", validatorName, "--algo", "eth_secp256k1", "--keyring-backend", "test", "--home", mynode)
 	if err != nil {
 		log.Errorf("keys add command failed: %s\nOutput: %s", err, output)
 		return err
@@ -150,7 +152,7 @@ func addGenesisAccountLogic(mynode string) error {
 	validatorName := mynode
 	mynode = "" + mynode
 
-	getAddr := exec.Command("ethermintd", "keys", "show", validatorName, "-a", "--home", mynode, "--keyring-backend", "test")
+	getAddr := exec.Command(Mrmintd, "keys", "show", validatorName, "-a", "--home", mynode, "--keyring-backend", "test")
 	addrOut, err := getAddr.Output()
 	if err != nil {
 		return err
@@ -182,7 +184,7 @@ func getBalanceCmdLogic(walletEthmAddress string) (bool, int64) {
 		log.Errorf("Boot node rpc not provided")
 		return false, 0
 	}
-	output, err := runCmdCaptureOutput("ethermintd", "query", "bank", "balances", walletEthmAddress, "--node", bootRpc)
+	output, err := runCmdCaptureOutput(Mrmintd, "query", "bank", "balances", walletEthmAddress, "--node", bootRpc)
 	if err != nil {
 		log.Errorf("Get balance command failed: %s\nOutput: %s", err, output)
 		return false, 0
@@ -361,7 +363,7 @@ func startNodeCmdLogic(mynode string) error {
 		"-p", grpcPort+":"+grpcPort, // Ethereum JSON-RPC
 		"-p", grpcWebPort+":"+grpcWebPort, // gRPC
 		"-p", jsonRpcPort+":"+jsonRpcPort, // gRPC-Web
-		imageName, "ethermintd", "start",
+		imageName, Mrmintd, "start",
 		"--home", mynode,
 		"--p2p.laddr", p2pLaddr,
 		"--rpc.laddr", rpcLaddr,
@@ -436,7 +438,7 @@ func getValidatorBalanceCmdLogic(mynode string) error {
 	}
 
 	fmt.Println()
-	getAddr := exec.Command("ethermintd", "keys", "show", mynode, "-a", "--home", mynode, "--keyring-backend", "test")
+	getAddr := exec.Command(Mrmintd, "keys", "show", mynode, "-a", "--home", mynode, "--keyring-backend", "test")
 	addrOut, err := getAddr.Output()
 	if err != nil {
 		return err
@@ -479,13 +481,13 @@ func checkBlockBeforeStake(mynode string) error {
 	rpcPort := getEnvOrFail("RPC_PORT")
 	bootRpc := getEnvOrFail("BOOT_NODE_RPC")
 
-	outputLocal, err := runCmdCaptureOutput("docker", "exec", "-i", mynode, "ethermintd", "query", "block", "--node", "http://localhost:"+rpcPort)
+	outputLocal, err := runCmdCaptureOutput("docker", "exec", "-i", mynode, Mrmintd, "query", "block", "--node", "http://localhost:"+rpcPort)
 	if err != nil {
 		log.Errorf("Query block command error : %s \n", outputLocal)
 		return err
 	}
 
-	outputBootNode, err := runCmdCaptureOutput("docker", "exec", "-i", mynode, "ethermintd", "query", "block", "--node", bootRpc)
+	outputBootNode, err := runCmdCaptureOutput("docker", "exec", "-i", mynode, Mrmintd, "query", "block", "--node", bootRpc)
 	if err != nil {
 		log.Errorf("Query block command error : %s \n", outputBootNode)
 		return err
@@ -540,7 +542,7 @@ func stakeFundCmdLogic(mynode string) error {
 	rpcPort := getEnvOrFail("RPC_PORT")
 	// bootRpc := getEnvOrFail("BOOT_NODE_RPC")
 	fmt.Println()
-	output, err := runCmdCaptureOutput("docker", "exec", "-i", mynode, "ethermintd", "query", "gov", "param", "deposit", "--node", "tcp://localhost:"+rpcPort)
+	output, err := runCmdCaptureOutput("docker", "exec", "-i", mynode, Mrmintd, "query", "gov", "param", "deposit", "--node", "tcp://localhost:"+rpcPort)
 	if err != nil {
 		log.Fatalf("failed to get deposit params: %v", err)
 	}
@@ -554,7 +556,7 @@ func stakeFundCmdLogic(mynode string) error {
 	log.Infof("Minimum Deposit: %s%s", cResp.MinDeposit[0].Amount, cResp.MinDeposit[0].Denom)
 	fmt.Println()
 
-	getAddr := exec.Command("ethermintd", "keys", "show", mynode, "-a", "--home", mynode, "--keyring-backend", "test")
+	getAddr := exec.Command(Mrmintd, "keys", "show", mynode, "-a", "--home", mynode, "--keyring-backend", "test")
 	addrOut, err := getAddr.Output()
 	if err != nil {
 		return err
@@ -564,7 +566,7 @@ func stakeFundCmdLogic(mynode string) error {
 	ethAddress, _ := Bech32ToEthAddress(ethm1Address)
 	log.Printf("balance %d Of wallet : %s", balance, ethAddress)
 
-	pubkey, err := runCmdCaptureOutput("docker", "exec", "-i", mynode, "ethermintd", "tendermint", "show-validator", "--home", mynode)
+	pubkey, err := runCmdCaptureOutput("docker", "exec", "-i", mynode, Mrmintd, "tendermint", "show-validator", "--home", mynode)
 	if err != nil {
 		log.Fatalf("Failed to get pubkey: %v", err)
 	}
@@ -588,7 +590,7 @@ func stakeFundCmdLogic(mynode string) error {
 	fmt.Scanln()
 
 	output, err = runCmdCaptureOutput("docker", "exec", "-i", mynode,
-		"ethermintd",
+		Mrmintd,
 		"tx", "staking", "create-validator",
 		"--amount", cResp.MinDeposit[0].Amount+""+cResp.MinDeposit[0].Denom,
 		"--pubkey", pubkey,
@@ -651,7 +653,7 @@ func getValidatorStatusCmdLogic(mynode string) error {
 	rpcPort := getEnvOrFail("RPC_PORT")
 	// bootRpc := getEnvOrFail("BOOT_NODE_RPC")
 
-	getAddr := exec.Command("ethermintd", "keys", "show", mynode, "--bech", "val", "--home", mynode, "--keyring-backend", "test")
+	getAddr := exec.Command(Mrmintd, "keys", "show", mynode, "--bech", "val", "--home", mynode, "--keyring-backend", "test")
 	output, err := getAddr.Output()
 	if err != nil {
 		log.Errorf("Key show command failed : %s", string(output))
@@ -663,7 +665,7 @@ func getValidatorStatusCmdLogic(mynode string) error {
 		log.Errorf("Get balance command failed: %s", err)
 	}
 
-	outputInfo, err := runCmdCaptureOutput("docker", "exec", "-i", mynode, "ethermintd", "query", "staking", "validator", cResp[0].Address, "--node", "http://localhost:"+rpcPort, "--output", "json")
+	outputInfo, err := runCmdCaptureOutput("docker", "exec", "-i", mynode, Mrmintd, "query", "staking", "validator", cResp[0].Address, "--node", "http://localhost:"+rpcPort, "--output", "json")
 	if err != nil {
 		log.Fatalf("Failed to get validator info : %s", outputInfo)
 		return err

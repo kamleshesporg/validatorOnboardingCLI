@@ -98,3 +98,30 @@ Push image on registry :
 		    docker tag test:latest docker.io/kamleshesp/mrmintchain:latest
 
 			docker push docker.io/kamleshesp/mrmintchain:latest
+
+
+
+
+
+
+
+
+
+			
+
+// ===========================
+For windows mrmintchain - 
+GOOS=windows GOARCH=amd64 go build -o mrmintchain.exe
+
+For windows ethermintd - 
+GOOS=windows GOARCH=amd64 go build -o build/ethermintd.exe ./cmd/ethermintd
+
+
+For MacOS mrmintchat - 
+	# First build both versions
+	GOOS=darwin GOARCH=amd64 go build -o mrmintchain-amd64
+	GOOS=darwin GOARCH=arm64 go build -o mrmintchain-arm64
+
+	# Then combine them using lipo (on a Mac):
+	lipo -create -output mrmintchain-universal mrmintchain-amd64 mrmintchain-arm64
+⚠️ The lipo step only works on macOS. On Linux or Windows, just cross-compile separately.
