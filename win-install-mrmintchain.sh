@@ -7,14 +7,14 @@ BINARY_NAME="mrmintchain.exe"
 echo "Mrmintchain Binary files downloading..."
 
 echo "1. mrmintchain binary fetching..."
-curl --progress-bar -LO https://raw.githubusercontent.com/kamleshesporg/validatorOnboardingCLI/main/mrmintchain.exe
+# curl --progress-bar -LO https://raw.githubusercontent.com/kamleshesporg/validatorOnboardingCLI/main/mrmintchain.exe
 
-chmod=+x mrmintchain.exe
+chmod +x mrmintchain.exe
 
 echo "2. mrmintd binary fetching..."
 # curl --progress-bar -LO https://raw.githubusercontent.com/kamleshesporg/validatorOnboardingCLI/main/chain/ethermintd.exe
-
-chmod=+x ethermintd.exe
+ 
+chmod +x ethermintd.exe
 
 echo -e "\xE2\x9C\x94 Binary files downloaded!"
 
@@ -78,5 +78,12 @@ if (-not \$currentPath.Split(';') -contains '$WIN_TARGET_DIR') {
     Write-Host 'ℹ️ $WIN_TARGET_DIR already exists in PATH.';
 }
 "
+echo "currentPath = [Environment]::GetEnvironmentVariable('Path', 'User');
+if (-not \$currentPath.Split(';') -contains '$WIN_TARGET_DIR') {
+    [Environment]::SetEnvironmentVariable('Path', \$currentPath + ';$WIN_TARGET_DIR', 'User');
+    Write-Host '✅ Added $WIN_TARGET_DIR to User PATH. Restart your terminal to apply.';
+} else {
+    Write-Host 'ℹ️ $WIN_TARGET_DIR already exists in PATH.';
+}"
 
 echo "✅ Installation complete. Try running: mrmintchain.exe"

@@ -13,26 +13,18 @@ echo "Mrmintchain Binary files downloading..."
 echo "1. mrmintchain binary fetching..."
 curl --progress-bar -LO https://raw.githubusercontent.com/kamleshesporg/validatorOnboardingCLI/main/mrmintchain-mac-amd64
 
-chmod=+x mrmintchain-mac-amd64
+chmod +x mrmintchain-mac-amd64
+cp mrmintchain-mac-amd64 /usr/local/bin/mrmintchain   
 
 echo "2. mrmintd binary fetching..."
 # curl --progress-bar -LO https://raw.githubusercontent.com/kamleshesporg/validatorOnboardingCLI/main/chain/ethermintd-amd64
 
-chmod=+x ethermintd
+chmod +x ethermintd
 
 echo -e "\xE2\x9C\x94 Binary files downloaded!"
 
 echo
-
-echo "Installing [${BINARY_NAME}] to [${INSTALL_PATH}]"
-mkdir -p ${GOBIN}
-cp ${BINARY_NAME} ${INSTALL_PATH}
 echo -e "\xE2\x9C\x94 Binary installed!"
-echo
-
-# For universal use : 
-lipo -create -output mrmintchain mrmintchain-mac-amd64
-
 
 CONTAINER_CLI=docker
 image_tag=latest

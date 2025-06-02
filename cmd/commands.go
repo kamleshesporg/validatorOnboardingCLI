@@ -357,7 +357,7 @@ func startNodeCmdLogic(mynode string) error {
 	log.Infof("Docker image found : %s in %s File", imageName, filepath.Join(".env"))
 
 	// Run the command with ports from ENV
-	err = runCmd("docker", "run", "-d", "-it", "--name", mynode, "-v", fmt.Sprintf("./%s:/app/%s", mynode, mynode),
+	err = runCmd("docker", "run", "-d", "-it", "--name", mynode, "-v", fmt.Sprintf("$PWD/%s:/app/%s", mynode, mynode),
 		"-p", p2pPort+":"+p2pPort, // P2P port
 		"-p", rpcPort+":"+rpcPort, // RPC port
 		"-p", grpcPort+":"+grpcPort, // Ethereum JSON-RPC

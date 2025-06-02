@@ -72,7 +72,7 @@ func getPortInputAndCheck(prompt string, defaultPort string, existing []string) 
 	reader := bufio.NewReader(os.Stdin)
 
 	for {
-		fmt.Printf("%s [%s]: ", prompt, defaultPort)
+		fmt.Printf("%s [default (%s)]: ", prompt, defaultPort)
 		input, _ := reader.ReadString('\n')
 		input = strings.TrimSpace(input)
 
@@ -130,7 +130,7 @@ func getStakingInputs(prompt string, defaultValue string) string {
 	reader := bufio.NewReader(os.Stdin)
 
 	for {
-		fmt.Printf("%s [%s]: ", prompt, defaultValue)
+		fmt.Printf("%s [default (%s)]: ", prompt, defaultValue)
 		input, _ := reader.ReadString('\n')
 		input = strings.TrimSpace(input)
 
