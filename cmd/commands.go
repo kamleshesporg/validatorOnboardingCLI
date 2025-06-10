@@ -708,10 +708,169 @@ func setWithdrawAddress() *cobra.Command {
 }
 
 func setWithdrawAddressLogic(mynode string, address string) error {
+	// Load the .env file to get the RPC port
+	err := godotenv.Load(filepath.Join(mynode, ".env"))
+	if err != nil {
+		log.Fatalf("❌ Failed to load .env: %v", err)
+	}
+	rpcPort := getEnvOrFail("RPC_PORT")
 
-	log.Printf("Hello your function is called with node : %v", mynode)
-	log.Printf("Your withdraw address is : %v", address)
+	// Get the validator's self-delegation address (this is usually the "from" address for txs related to the validator)
+	// This command still needs to know the path to the node's home directory for keyring access.
+	// We assume Mrmintd (your './ethermintd' binary) is directly accessible on the host machine.
+	getAddr := exec.Command(Mrmintd, "keys", "show", mynode, "-a", "--home", mynode, "--keyring-backend", "test")
+	addrOut, err := getAddr.Output()
+	if err != nil {
+		log.Errorf("Failed to get validator address: %s", string(addrOut))
+		return err
+	}
+	validatorDelegatorAddress := strings.TrimSpace(string(addrOut))
 
+	log.Infof("Attempting to set withdraw address for validator '%s' (%s) to '%s'", mynode, validatorDelegatorAddress, address)
+	log.Info("RPC Port '%s'", rpcPort)
+	// Construct the command to set the withdrawal address to be run directly on the host.
+	// The command will be: `Mrmintd tx distribution set-withdraw-address [withdraw-address] --from [delegator-address] --chain-id [chain-id] --gas auto --gas-adjustment 1.1 --node [rpc-node] --yes`
+	output, err := runCmdCaptureOutput(Mrmintd, // This is the key change: directly calling Mrmintd
+		"tx", "distribution", "set-withdraw-addr", address,
+		"--from", mynode,
+		"--chain-id", "os_9000-1", // Use the chain ID from configCliParams
+		"--gas", "auto",
+		"--keyring-backend", "test",
+		"--gas-adjustment", "1.1",
+		"--node", "tcp://localhost:"+rpcPort, // Assumes your node's RPC is accessible on localhost
+		"--yes",
+	)
+
+	if err != nil {
+		log.Errorf("❌ Failed to set withdraw address: %s\nOutput: %s", err, output)
+		return err
+	}
+
+	log.Infof("✅ Withdraw address set successfully! Transaction output:\n%s", output)
 	return nil
+}
 
+func delegateSelfStakeCmd() *cobra.Command {
+	var mynode string
+	var amount string
+
+	cmd := &cobra.Command{
+		Use:   "self-delegate",
+		Short: "Delegate more tokens to your validator (increase self-delegation)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return delegateSelfStakeLogic(mynode, amount)
+		},
+	}
+	cmd.Flags().StringVar(&mynode, "mynode", "", "Please enter your node name (key name for your validator account)")
+	cmd.MarkFlagRequired("mynode")
+
+	cmd.Flags().StringVar(&amount, "amount", "", "Amount of tokens to delegate (e.g., 1000000000000000000aphoton)")
+	cmd.MarkFlagRequired("amount")
+
+	return cmd
+}
+
+func delegateSelfStakeLogic(mynode string, amount string) error {
+	configCliParams = getConfigCliParams() // Ensure config is loaded
+
+	// Load the .env file to get the RPC port
+	err := godotenv.Load(filepath.Join(mynode, ".env"))
+	if err != nil {
+		log.Fatalf("❌ Failed to load .env: %v", err)
+	}
+	rpcPort := getEnvOrFail("RPC_PORT")
+
+	// 1. Get the delegator's address (ethm1...) -- This is the --from address
+	getDelegatorAddrCmd := exec.Command(Mrmintd, "keys", "show", mynode, "-a", "--home", mynode, "--keyring-backend", "test")
+	delegatorAddrOut, err := getDelegatorAddrCmd.Output()
+	if err != nil {
+		log.Errorf("Failed to get delegator address: %s\nOutput: %s", err, string(delegatorAddrOut))
+		return err
+	}
+	validatorDelegatorAddress := strings.TrimSpace(string(delegatorAddrOut))
+
+	// 2. Get the validator's operator address (ethmvaloper1...) -- This is the target validator address for delegation
+	getValidatorOperatorAddrCmd := exec.Command(Mrmintd, "keys", "show", mynode, "--bech", "val", "--home", mynode, "--keyring-backend", "test")
+	validatorOperatorAddrOut, err := getValidatorOperatorAddrCmd.Output()
+	if err != nil {
+		log.Errorf("Failed to get validator operator address: %s\nOutput: %s", err, string(validatorOperatorAddrOut))
+		return err
+	}
+
+	// Define a struct to unmarshal the YAML output
+	var keyInfo []struct {
+		Address string `yaml:"address"`
+	}
+
+	// Unmarshal the YAML output into the struct
+	err = yaml.Unmarshal(validatorOperatorAddrOut, &keyInfo)
+	if err != nil {
+		log.Errorf("Failed to parse validator operator address output: %s\nOutput: %s", err, string(validatorOperatorAddrOut))
+		return err
+	}
+
+	if len(keyInfo) == 0 || keyInfo[0].Address == "" {
+		log.Errorf("Could not find validator operator address in output: %s", string(validatorOperatorAddrOut))
+		return fmt.Errorf("validator operator address not found")
+	}
+
+	validatorOperatorAddress := keyInfo[0].Address // This is the clean ethmvaloper1... address
+
+	// --- NEW: Check if the validator exists on chain ---
+	// Query the validator status
+	validatorStatusOutput, err := runCmdCaptureOutput(Mrmintd, "query", "staking", "validator", validatorOperatorAddress, "--node", "tcp://localhost:"+rpcPort, "--output", "json")
+	if err != nil {
+		// If the query command itself fails, it likely means the validator isn't found or the node isn't synced.
+		// Check for specific "not found" messages or general errors
+		if strings.Contains(validatorStatusOutput, "not found") || strings.Contains(validatorStatusOutput, "no such validator") {
+			log.Errorf("❌ Validator '%s' not found on chain. Please create your validator first using the 'stake' command.", mynode)
+			return fmt.Errorf("validator not found on chain")
+		} else {
+			log.Errorf("❌ Failed to query validator status: %s\nOutput: %s", err, validatorStatusOutput)
+			return err
+		}
+	}
+
+	// Optionally, parse the JSON output to check the status, though "not found" is usually the key indicator for non-existence.
+	// For simplicity, we'll assume a successful query implies existence here,
+	// but a more robust check might parse the JSON and check for "status" field.
+	var validatorInfo struct {
+		OperatorAddress string `json:"operator_address"`
+		Status          string `json:"status"`
+	}
+	err = json.Unmarshal([]byte(validatorStatusOutput), &validatorInfo)
+	if err != nil {
+		log.Errorf("Failed to parse validator status JSON: %s\nOutput: %s", err, validatorStatusOutput)
+		return err
+	}
+
+	// Consider if you only want to allow self-delegation to "bonded" validators
+	if validatorInfo.Status != "BOND_STATUS_BONDED" && validatorInfo.Status != "BOND_STATUS_UNBONDING" {
+		log.Warnf("⚠️ Validator '%s' is not in a bonded or unbonding state (%s). Proceeding but verify this is intended.", mynode, validatorInfo.Status)
+	}
+	// --- END NEW CHECK ---
+
+	log.Infof("Attempting to self-delegate '%s' from '%s' to validator '%s'", amount, validatorDelegatorAddress, validatorOperatorAddress)
+
+	// Construct the command to delegate more tokens.
+	// This command will be run directly on the host using Mrmintd.
+	output, err := runCmdCaptureOutput(Mrmintd,
+		"tx", "staking", "delegate", validatorOperatorAddress, amount, // validatorOperatorAddress is now clean
+		"--from", validatorDelegatorAddress,
+		"--home", mynode, // Ensure home path is correctly passed for keyring
+		"--keyring-backend", "test", // Match the backend
+		"--chain-id", configCliParams.ChindId,
+		"--gas", "auto",
+		"--gas-adjustment", "1.1",
+		"--node", "tcp://localhost:"+rpcPort,
+		"--yes",
+	)
+
+	if err != nil {
+		log.Errorf("❌ Failed to self-delegate tokens: %s\nOutput: %s", err, output)
+		return err
+	}
+
+	log.Infof("✅ Tokens self-delegated successfully! Transaction output:\n%s", output)
+	return nil
 }
