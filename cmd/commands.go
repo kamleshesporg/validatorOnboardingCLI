@@ -686,3 +686,32 @@ func getValidatorStatusCmdLogic(mynode string) error {
 	}
 	return err
 }
+
+func setWithdrawAddress() *cobra.Command {
+	var mynode string
+	var address string
+
+	cmd := &cobra.Command{
+		Use:   "withdraw-address",
+		Short: "Set withdraw address to withdraw your fund",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return setWithdrawAddressLogic(mynode, address)
+		},
+	}
+	cmd.Flags().StringVar(&mynode, "mynode", "", "Please enter your node name")
+	cmd.MarkFlagRequired("mynode")
+
+	cmd.Flags().StringVar(&address, "address", "", "Please enter your withdraw wallet address")
+	cmd.MarkFlagRequired("address")
+
+	return cmd
+}
+
+func setWithdrawAddressLogic(mynode string, address string) error {
+
+	log.Printf("Hello your function is called with node : %v", mynode)
+	log.Printf("Your withdraw address is : %v", address)
+
+	return nil
+
+}

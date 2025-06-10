@@ -32,6 +32,7 @@ func main() {
 		getValidatorStatusCmd(),
 		getValidatorBalanceCmd(),
 		autoRunCmd(),
+		setWithdrawAddress(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
