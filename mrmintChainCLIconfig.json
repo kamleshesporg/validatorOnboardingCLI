@@ -1,8 +1,8 @@
 {
-    "persistent_peers": "29996f0c7cc853d551e280a8162480fcd684f0b8@127.0.0.1:26656",
-    "genesisUrl": "https://web3sports.s3.ap-south-1.amazonaws.com/blockchain/genesis.json",
-    "configToml": "https://web3sports.s3.ap-south-1.amazonaws.com/blockchain/config.toml",
+    "persistent_peers": "bc54163107a8bc2ee48568cd537596037dd8fb3a@127.0.0.1:26656",
+    "genesisUrl": "https://web3sports.s3.ap-south-1.amazonaws.com/blockchain/server/genesis.json",
+    "configToml": "https://web3sports.s3.ap-south-1.amazonaws.com/blockchain/server/config.toml",
     "chindId": "os_9000-1",
     "minStakeFund": 50,
-    "bootNodeRpc":"tcp://localhost:26657"
+    "bootNodeRpc":"http://3.110.16.39:26657"
 }
