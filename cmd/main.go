@@ -41,6 +41,7 @@ func main() {
 		queryProposalsCmd(),
 		voteProposalCmd(),
 		submitParamChangeProposalCmd(),
+		queryTxCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
@@ -72,9 +73,9 @@ func autoRunCmd() *cobra.Command {
 				return fmt.Errorf("❌ add genesis account failed: %w", err)
 			}
 
-			// if err := portsAndEnvGenerationLogic(mynode); err != nil {
-			// 	return fmt.Errorf("❌ collect gentxs failed: %w", err)
-			// }
+			if err := portsAndEnvGenerationLogic(mynode); err != nil {
+				return fmt.Errorf("❌ collect gentxs failed: %w", err)
+			}
 
 			fmt.Println("✅ Validator setup completed successfully. Please run stake command to become validator.")
 			return nil
