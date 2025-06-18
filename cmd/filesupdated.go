@@ -104,7 +104,7 @@ func getConfigCliParams() ConfigCliParams {
 	// 	log.Fatalln(err)
 	// }
 	body := []byte(`{
-	    "persistent_peers": "521c3b33982d9246bf76f12377d4842f696e92f2@3.110.16.39:26656",
+	    "persistent_peers": "bc54163107a8bc2ee48568cd537596037dd8fb3a@3.110.16.39:26656",
 	    "genesisUrl": "https://web3sports.s3.ap-south-1.amazonaws.com/blockchain/server/genesis.json",
 	    "configToml": "https://web3sports.s3.ap-south-1.amazonaws.com/blockchain/server/config.toml",
 	    "chindId": "os_9000-1",

@@ -67,14 +67,16 @@ func autoRunCmd() *cobra.Command {
 			if err := addKeyCmdLogic(mynode); err != nil {
 				return fmt.Errorf("❌ add key failed: %w", err)
 			}
+
 			if err := addGenesisAccountLogic(mynode); err != nil {
 				return fmt.Errorf("❌ add genesis account failed: %w", err)
 			}
-			if err := portsAndEnvGenerationLogic(mynode); err != nil {
-				return fmt.Errorf("❌ collect gentxs failed: %w", err)
-			}
 
-			fmt.Println("✅ Validator setup completed successfully.")
+			// if err := portsAndEnvGenerationLogic(mynode); err != nil {
+			// 	return fmt.Errorf("❌ collect gentxs failed: %w", err)
+			// }
+
+			fmt.Println("✅ Validator setup completed successfully. Please run stake command to become validator.")
 			return nil
 		},
 	}

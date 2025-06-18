@@ -33,41 +33,33 @@ var Mrmintd = "./ethermintd"
 
 var configCliParams ConfigCliParams
 
-// / ParamChange remains the same
 type ParamChange struct {
 	Subspace string          `json:"subspace"`
 	Key      string          `json:"key"`
 	Value    json.RawMessage `json:"value"`
 }
 
-// ParameterChangeProposalContent is the content of a parameter change proposal
-// It reverts to the v1beta1 type as per the provided JSON example
 type ParameterChangeProposalContent struct {
-	Type        string        `json:"@type"` // THIS IS BACK TO "/cosmos.params.v1beta1.ParameterChangeProposal"
+	Type        string        `json:"@type"`
 	Title       string        `json:"title"`
 	Description string        `json:"description"`
 	Changes     []ParamChange `json:"changes"`
 }
 
-// TextProposalContent is the content of a text proposal
-// This also likely uses a v1beta1 type as per the pattern
 type TextProposalContent struct {
-	Type        string `json:"@type"` // Likely "/cosmos.gov.v1beta1.TextProposal"
+	Type        string `json:"@type"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
 }
 
-// MsgExecLegacyContentWrapper wraps the actual proposal content for Gov v1
 type MsgExecLegacyContentWrapper struct {
 	Type      string          `json:"@type"`   // "/cosmos.gov.v1.MsgExecLegacyContent"
 	Content   json.RawMessage `json:"content"` // This holds the marshaled ParameterChangeProposalContent or TextProposalContent
 	Authority string          `json:"authority"`
 }
 
-// ProposalFile is the top-level structure expected by `submit-proposal`
-// Deposit is still a string as we determined from the previous error
 type ProposalFile struct {
-	Messages []json.RawMessage `json:"messages"` // This array will hold marshaled MsgExecLegacyContentWrapper objects
+	Messages []json.RawMessage `json:"messages"`
 	Deposit  string            `json:"deposit"`
 	Proposer string            `json:"proposer,omitempty"` // Optional proposer address
 	Metadata string            `json:"metadata,omitempty"` // Optional metadata
@@ -712,23 +704,20 @@ The validator must have sufficient funds to cover the transaction fees.`,
 }
 
 func unjailCmdLogic(mynode string) error {
-	configCliParams = getConfigCliParams() // Ensure config is loaded
+	configCliParams = getConfigCliParams()
 
-	// Load node-specific .env for RPC port
 	err := godotenv.Load(filepath.Join(mynode, ".env"))
 	if err != nil {
 		log.Fatalf("❌ Failed to load node-specific .env for '%s': %v", mynode, err)
 	}
 
-	// Load global .env for consistency and general configs (like chain-id if dynamic)
 	err = godotenv.Load(filepath.Join(".env"))
 	if err != nil {
 		log.Fatalf("❌ Failed to load global .env: %v", err)
 	}
 
-	rpcPort := getEnvOrFail("RPC_PORT") // Get RPC port from loaded .env
+	rpcPort := getEnvOrFail("RPC_PORT")
 
-	// Get the delegator's address (ethm1...) -- This is the --from address for the transaction
 	getDelegatorAddrCmd := exec.Command(Mrmintd, "keys", "show", mynode, "-a", "--home", mynode, "--keyring-backend", "test")
 	delegatorAddrOut, err := getDelegatorAddrCmd.Output()
 	if err != nil {
@@ -740,8 +729,6 @@ func unjailCmdLogic(mynode string) error {
 	log.Infof("Attempting to unjail validator using key '%s' (delegator address: %s)", mynode, delegatorAddress)
 	log.Infof("Sending unjail transaction to local node RPC: tcp://localhost:%s", rpcPort)
 
-	// Construct and run the unjail command
-	// This command is sent directly to your local node's RPC
 	output, err := runCmdCaptureOutput(Mrmintd,
 		"tx", "slashing", "unjail",
 		"--from", delegatorAddress,
@@ -769,20 +756,18 @@ func unjailCmdLogic(mynode string) error {
 type ValidatorDevKey []struct {
 	Address string `yaml:"address"`
 }
+
 type ValidatorDevInfo struct {
 	Status string `yaml:"status"`
 }
 
 func getValidatorStatusCmdLogic(mynode string) error {
 
-	// Load the .env file
-
 	err := godotenv.Load(filepath.Join(mynode, ".env"))
 	if err != nil {
 		log.Fatalf("❌ Failed to load .env: %v", err)
 	}
 	rpcPort := getEnvOrFail("RPC_PORT")
-	// bootRpc := getEnvOrFail("BOOT_NODE_RPC")
 
 	getAddr := exec.Command(Mrmintd, "keys", "show", mynode, "--bech", "val", "--home", mynode, "--keyring-backend", "test")
 	output, err := getAddr.Output()
@@ -839,15 +824,13 @@ func setWithdrawAddress() *cobra.Command {
 }
 
 func setWithdrawAddressLogic(mynode string, address string) error {
-	configCliParams = getConfigCliParams() // Ensure config is loaded
+	configCliParams = getConfigCliParams()
 
-	// Load node-specific .env for RPC port
 	err := godotenv.Load(filepath.Join(mynode, ".env"))
 	if err != nil {
 		log.Fatalf("❌ Failed to load node-specific .env for '%s': %v", mynode, err)
 	}
 
-	// Load global .env for consistency and general configs (like chain-id if dynamic)
 	err = godotenv.Load(filepath.Join(".env"))
 	if err != nil {
 		log.Fatalf("❌ Failed to load global .env: %v", err)
@@ -855,8 +838,6 @@ func setWithdrawAddressLogic(mynode string, address string) error {
 
 	rpcPort := getEnvOrFail("RPC_PORT") // Get RPC port from loaded .env
 
-	// Get the validator's self-delegation address (this is usually the "from" address for txs related to the validator)
-	// This command correctly uses --home mynode to find the keyring
 	getAddr := exec.Command(Mrmintd, "keys", "show", mynode, "-a", "--home", mynode, "--keyring-backend", "test")
 	addrOut, err := getAddr.Output()
 	if err != nil {
@@ -867,17 +848,15 @@ func setWithdrawAddressLogic(mynode string, address string) error {
 
 	log.Infof("Attempting to set withdraw address for validator '%s' (delegator address: %s) to '%s'", mynode, validatorDelegatorAddress, address)
 
-	// Construct the command to set the withdrawal address.
-	// IMPORTANT: Added --home mynode here for the tx command!
 	output, err := runCmdCaptureOutput(Mrmintd,
 		"tx", "distribution", "set-withdraw-addr", address,
-		"--from", mynode, // This is the key NAME, which is correct here
-		"--home", mynode, // <--- THIS IS THE CRITICAL FIX: Pass --home for the tx command to find the keyring
-		"--chain-id", configCliParams.ChaindId, // Use the chain ID from configCliParams
+		"--from", mynode,
+		"--home", mynode,
+		"--chain-id", configCliParams.ChaindId,
 		"--gas-prices", "7aphoton",
 		"--keyring-backend", "test",
 		"--gas-adjustment", "1.1",
-		"--node", "tcp://localhost:"+rpcPort, // Assumes your node's RPC is accessible on localhost
+		"--node", "tcp://localhost:"+rpcPort,
 		"--yes",
 	)
 
@@ -914,14 +893,12 @@ func delegateSelfStakeCmd() *cobra.Command {
 func delegateSelfStakeLogic(mynode string, amount string) error {
 	configCliParams = getConfigCliParams() // Ensure config is loaded
 
-	// Load the .env file to get the RPC port
 	err := godotenv.Load(filepath.Join(mynode, ".env"))
 	if err != nil {
 		log.Fatalf("❌ Failed to load .env: %v", err)
 	}
 	rpcPort := getEnvOrFail("RPC_PORT")
 
-	// 1. Get the delegator's address (ethm1...) -- This is the --from address
 	getDelegatorAddrCmd := exec.Command(Mrmintd, "keys", "show", mynode, "-a", "--home", mynode, "--keyring-backend", "test")
 	delegatorAddrOut, err := getDelegatorAddrCmd.Output()
 	if err != nil {
@@ -930,7 +907,6 @@ func delegateSelfStakeLogic(mynode string, amount string) error {
 	}
 	validatorDelegatorAddress := strings.TrimSpace(string(delegatorAddrOut))
 
-	// 2. Get the validator's operator address (ethmvaloper1...) -- This is the target validator address for delegation
 	getValidatorOperatorAddrCmd := exec.Command(Mrmintd, "keys", "show", mynode, "--bech", "val", "--home", mynode, "--keyring-backend", "test")
 	validatorOperatorAddrOut, err := getValidatorOperatorAddrCmd.Output()
 	if err != nil {
@@ -938,12 +914,10 @@ func delegateSelfStakeLogic(mynode string, amount string) error {
 		return err
 	}
 
-	// Define a struct to unmarshal the YAML output
 	var keyInfo []struct {
 		Address string `yaml:"address"`
 	}
 
-	// Unmarshal the YAML output into the struct
 	err = yaml.Unmarshal(validatorOperatorAddrOut, &keyInfo)
 	if err != nil {
 		log.Errorf("Failed to parse validator operator address output: %s\nOutput: %s", err, string(validatorOperatorAddrOut))
@@ -955,14 +929,11 @@ func delegateSelfStakeLogic(mynode string, amount string) error {
 		return fmt.Errorf("validator operator address not found")
 	}
 
-	validatorOperatorAddress := keyInfo[0].Address // This is the clean ethmvaloper1... address
+	validatorOperatorAddress := keyInfo[0].Address
 
-	// --- NEW: Check if the validator exists on chain ---
-	// Query the validator status
 	validatorStatusOutput, err := runCmdCaptureOutput(Mrmintd, "query", "staking", "validator", validatorOperatorAddress, "--node", "tcp://localhost:"+rpcPort, "--output", "json")
 	if err != nil {
-		// If the query command itself fails, it likely means the validator isn't found or the node isn't synced.
-		// Check for specific "not found" messages or general errors
+
 		if strings.Contains(validatorStatusOutput, "not found") || strings.Contains(validatorStatusOutput, "no such validator") {
 			log.Errorf("❌ Validator '%s' not found on chain. Please create your validator first using the 'stake' command.", mynode)
 			return fmt.Errorf("validator not found on chain")
@@ -972,9 +943,6 @@ func delegateSelfStakeLogic(mynode string, amount string) error {
 		}
 	}
 
-	// Optionally, parse the JSON output to check the status, though "not found" is usually the key indicator for non-existence.
-	// For simplicity, we'll assume a successful query implies existence here,
-	// but a more robust check might parse the JSON and check for "status" field.
 	var validatorInfo struct {
 		OperatorAddress string `json:"operator_address"`
 		Status          string `json:"status"`
@@ -985,20 +953,16 @@ func delegateSelfStakeLogic(mynode string, amount string) error {
 		return err
 	}
 
-	// Consider if you only want to allow self-delegation to "bonded" validators
 	if validatorInfo.Status != "BOND_STATUS_BONDED" && validatorInfo.Status != "BOND_STATUS_UNBONDING" {
 		log.Warnf("⚠️ Validator '%s' is not in a bonded or unbonding state (%s). Proceeding but verify this is intended.", mynode, validatorInfo.Status)
 	}
-	// --- END NEW CHECK ---
 
 	log.Infof("Attempting to self-delegate '%s' from '%s' to validator '%s'", amount, validatorDelegatorAddress, validatorOperatorAddress)
 
-	// Construct the command to delegate more tokens.
-	// This command will be run directly on the host using Mrmintd.
 	output, err := runCmdCaptureOutput(Mrmintd,
-		"tx", "staking", "delegate", validatorOperatorAddress, amount, // validatorOperatorAddress is now clean
+		"tx", "staking", "delegate", validatorOperatorAddress, amount,
 		"--from", validatorDelegatorAddress,
-		"--home", mynode, // Ensure home path is correctly passed for keyring
+		"--home", mynode,
 		"--keyring-backend", "test", // Match the backend
 		"--chain-id", configCliParams.ChaindId,
 		"--gas-prices", "7aphoton",
@@ -1038,34 +1002,28 @@ The tokens will be locked for the unbonding period (e.g., 21 days) before becomi
 	return cmd
 }
 
-// unstakeCmdLogic contains the core logic for the unstake command
 func unstakeCmdLogic(mynode string, amount string) error {
-	configCliParams = getConfigCliParams() // Ensure config is loaded
+	configCliParams = getConfigCliParams()
 
-	// Load node-specific .env for RPC port
 	err := godotenv.Load(filepath.Join(mynode, ".env"))
 	if err != nil {
 		log.Fatalf("❌ Failed to load node-specific .env for '%s': %v", mynode, err)
 	}
 
-	// Load global .env for consistency and general configs (like chain-id if dynamic)
 	err = godotenv.Load(filepath.Join(".env"))
 	if err != nil {
 		log.Fatalf("❌ Failed to load global .env: %v", err)
 	}
 
-	rpcPort := getEnvOrFail("RPC_PORT") // Get RPC port from loaded .env
+	rpcPort := getEnvOrFail("RPC_PORT")
 
-	// 1. Get the delegator's address (ethm1...) -- This is the --from address
 	getDelegatorAddrCmd := exec.Command(Mrmintd, "keys", "show", mynode, "-a", "--home", mynode, "--keyring-backend", "test")
 	delegatorAddrOut, err := getDelegatorAddrCmd.Output()
 	if err != nil {
 		log.Errorf("Failed to get delegator address for '%s': %s\nOutput: %s", mynode, err, string(delegatorAddrOut))
 		return err
 	}
-	// delegatorAddress := strings.TrimSpace(string(delegatorAddrOut)) // Not strictly needed if --from accepts key name
 
-	// 2. Get the validator's operator address (ethmvaloper1...) -- This is the target validator address for undelegation
 	getValidatorOperatorAddrCmd := exec.Command(Mrmintd, "keys", "show", mynode, "--bech", "val", "--home", mynode, "--keyring-backend", "test")
 	validatorOperatorAddrOut, err := getValidatorOperatorAddrCmd.Output()
 	if err != nil {
@@ -1073,12 +1031,10 @@ func unstakeCmdLogic(mynode string, amount string) error {
 		return err
 	}
 
-	// Define a struct to unmarshal the YAML output
 	var keyInfo []struct {
 		Address string `yaml:"address"`
 	}
 
-	// Unmarshal the YAML output into the struct
 	err = yaml.Unmarshal(validatorOperatorAddrOut, &keyInfo)
 	if err != nil {
 		log.Errorf("Failed to parse validator operator address output for '%s': %s\nOutput: %s", mynode, err, string(validatorOperatorAddrOut))
@@ -1095,8 +1051,6 @@ func unstakeCmdLogic(mynode string, amount string) error {
 	log.Infof("Attempting to unstake '%s' from validator '%s' (%s)", amount, mynode, validatorOperatorAddress)
 	log.Infof("Sending undelegation transaction to local node RPC: tcp://localhost:%s", rpcPort)
 
-	// Construct and run the undelegate command
-	// `ethermintd tx staking undelegate [validator-address] [amount] --from [key-name] ...`
 	output, err := runCmdCaptureOutput(Mrmintd,
 		"tx", "staking", "unbond", validatorOperatorAddress, amount,
 		"--from", mynode, // Use the key name for --from flag
@@ -1139,17 +1093,14 @@ delegator address in this context).`,
 	return cmd
 }
 
-// withdrawRewardsCmdLogic contains the core logic for the withdraw-rewards command
 func withdrawRewardsCmdLogic(mynode string) error {
-	configCliParams = getConfigCliParams() // Ensure config is loaded
+	configCliParams = getConfigCliParams()
 
-	// Load node-specific .env for RPC port
 	err := godotenv.Load(filepath.Join(mynode, ".env"))
 	if err != nil {
 		log.Fatalf("❌ Failed to load node-specific .env for '%s': %v", mynode, err)
 	}
 
-	// Load global .env for consistency and general configs (like chain-id if dynamic)
 	err = godotenv.Load(filepath.Join(".env"))
 	if err != nil {
 		log.Fatalf("❌ Failed to load global .env: %v", err)
@@ -1157,23 +1108,20 @@ func withdrawRewardsCmdLogic(mynode string) error {
 
 	rpcPort := getEnvOrFail("RPC_PORT") // Get RPC port from loaded .env
 
-	// The 'withdraw-all-rewards' command uses the delegator's key name directly for '--from'
 	log.Infof("Attempting to withdraw all rewards for validator '%s'", mynode)
 	log.Infof("Sending withdraw transaction to local node RPC: tcp://localhost:%s", rpcPort)
 
-	// Construct and run the withdraw-all-rewards command
-	// `ethermintd tx distribution withdraw-all-rewards --from [key-name] ...`
 	output, err := runCmdCaptureOutput(Mrmintd,
 		"tx", "distribution", "withdraw-all-rewards",
-		"--from", mynode, // Use the key name for --from flag
-		"--home", mynode, // Pass --home for keyring access
+		"--from", mynode,
+		"--home", mynode,
 		"--keyring-backend", "test",
 		"--chain-id", configCliParams.ChaindId,
 		"--gas", "auto",
-		"--gas-prices", "7aphoton", // Explicitly setting gas prices
+		"--gas-prices", "7aphoton",
 		"--gas-adjustment", "1.1",
-		"--node", "tcp://localhost:"+rpcPort, // Target your local node's RPC
-		"--yes", // Automatically confirm transaction
+		"--node", "tcp://localhost:"+rpcPort,
+		"--yes",
 	)
 
 	if err != nil {
@@ -1293,44 +1241,38 @@ func queryProposalsCmd() *cobra.Command {
 	return cmd
 }
 
-// queryProposalsCmdLogic contains the core logic for the query-proposals command
 func queryProposalsCmdLogic() error {
 	configCliParams = getConfigCliParams() // Ensure config is loaded
 
-	// Load global .env for RPC port and other configurations if not already loaded
 	err := godotenv.Load(filepath.Join(".env"))
 	if err != nil {
 		log.Warnf("Could not load global .env file. Assuming default RPC port.")
 	}
 
-	rpcPort := getEnvOrFail("RPC_PORT") // Get RPC port from loaded .env
+	rpcPort := getEnvOrFail("RPC_PORT")
 
 	log.Infof("Querying all governance proposals from RPC: tcp://localhost:%s", rpcPort)
 
-	output, cmdErr := runCmdCaptureOutput(Mrmintd, // Renamed 'err' to 'cmdErr' to avoid shadowing
+	output, cmdErr := runCmdCaptureOutput(Mrmintd,
 		"query", "gov", "proposals",
-		"--node", "tcp://localhost:"+rpcPort, // Target your local node's RPC
-		"-o", "json", // Request JSON output for easier parsing/reading
+		"--node", "tcp://localhost:"+rpcPort,
+		"-o", "json",
 	)
 
-	// --- NEW LOGIC TO HANDLE "NO PROPOSALS FOUND" GRACEFULLY ---
 	if cmdErr != nil {
 		if strings.Contains(output, "no proposals found") {
 			log.Warnf("ℹ️ No governance proposals found on the chain.")
-			return nil // Return nil error to indicate success for this specific case
+			return nil
 		}
-		// If it's a different error, then log it as a failure
 		log.Errorf("❌ Failed to query proposals: %s\nOutput: %s", cmdErr, output)
 		log.Warnf("Please ensure your node is running and synced.")
 		return cmdErr
 	}
-	// --- END NEW LOGIC ---
 
-	// Pretty print the JSON output
 	var prettyJSON bytes.Buffer
 	if err = json.Indent(&prettyJSON, []byte(output), "", "  "); err != nil {
 		log.Errorf("Failed to pretty-print JSON output: %v", err)
-		fmt.Println(output) // Fallback to raw output
+		fmt.Println(output)
 		return nil
 	}
 
@@ -1367,25 +1309,21 @@ Example: --proposal-id 1 --option "yes"`,
 	return cmd
 }
 
-// voteProposalCmdLogic contains the core logic for the vote-proposal command
 func voteProposalCmdLogic(mynode string, proposalID uint64, voteOption string) error {
 	configCliParams = getConfigCliParams() // Ensure config is loaded
 
-	// Load node-specific .env for RPC port
 	err := godotenv.Load(filepath.Join(mynode, ".env"))
 	if err != nil {
 		log.Fatalf("❌ Failed to load node-specific .env for '%s': %v", mynode, err)
 	}
 
-	// Load global .env for consistency and general configs
 	err = godotenv.Load(filepath.Join(".env"))
 	if err != nil {
 		log.Fatalf("❌ Failed to load global .env: %v", err)
 	}
 
-	rpcPort := getEnvOrFail("RPC_PORT") // Get RPC port from loaded .env
+	rpcPort := getEnvOrFail("RPC_PORT")
 
-	// Input validation for vote option
 	validOptions := map[string]bool{
 		"yes":          true,
 		"no":           true,
@@ -1400,21 +1338,19 @@ func voteProposalCmdLogic(mynode string, proposalID uint64, voteOption string) e
 	log.Infof("Attempting to cast '%s' vote on proposal ID %d for voter '%s'", voteOption, proposalID, mynode)
 	log.Infof("Sending vote transaction to local node RPC: tcp://localhost:%s", rpcPort)
 
-	// Construct and run the vote command
-	// `ethermintd tx gov vote [proposal-id] [option] --from [key-name] ...`
 	output, err := runCmdCaptureOutput(Mrmintd,
 		"tx", "gov", "vote",
 		fmt.Sprintf("%d", proposalID), // Proposal ID
 		strings.ToLower(voteOption),   // Vote option
-		"--from", mynode,              // Use the key name for --from flag
-		"--home", mynode, // Pass --home for keyring access
+		"--from", mynode,
+		"--home", mynode,
 		"--keyring-backend", "test",
 		"--chain-id", configCliParams.ChaindId,
 		"--gas", "auto",
-		"--gas-prices", "7aphoton", // Explicitly setting gas prices
+		"--gas-prices", "7aphoton",
 		"--gas-adjustment", "1.1",
 		"--node", "tcp://localhost:"+rpcPort, // Target your local node's RPC
-		"--yes", // Automatically confirm transaction
+		"--yes",
 	)
 
 	if err != nil {
@@ -1468,7 +1404,6 @@ Example: --module "mint" --param-key "MintDenom" --param-value "\"aphoton\""`, /
 	return cmd
 }
 
-// submitParamChangeProposalCmdLogic contains the core logic for submitting a param-change proposal
 func submitParamChangeProposalCmdLogic(
 	mynode, title, description, deposit, module, paramKey, paramValue string,
 ) error {
@@ -1487,9 +1422,8 @@ func submitParamChangeProposalCmdLogic(
 
 	parsedParamValue := json.RawMessage(fmt.Sprintf("%q", paramValue))
 
-	// 1. Create the specific parameter change proposal content
 	paramChangeContent := ParameterChangeProposalContent{
-		Type:        "/cosmos.params.v1beta1.ParameterChangeProposal", // Back to v1beta1!
+		Type:        "/cosmos.params.v1beta1.ParameterChangeProposal",
 		Title:       title,
 		Description: description,
 		Changes: []ParamChange{
@@ -1501,16 +1435,11 @@ func submitParamChangeProposalCmdLogic(
 		},
 	}
 
-	// 2. Marshal the specific content into a raw JSON message
 	paramChangeContentBytes, err := json.Marshal(paramChangeContent)
 	if err != nil {
 		log.Fatalf("❌ Failed to marshal param change content: %v", err)
 	}
 
-	// 3. Create the MsgExecLegacyContentWrapper
-	// The authority is typically the governance module account address.
-	// You might need to query this from your chain: `ethermintd query auth module-accounts`
-	// For now, using the one you provided in the example.
 	govAuthorityAddress := "ethm10d07y265gmmuvt4z0w9aw880jnsr700jpva843" // **IMPORTANT: Make this dynamic if it changes!**
 
 	legacyContentWrapper := MsgExecLegacyContentWrapper{
@@ -1519,17 +1448,14 @@ func submitParamChangeProposalCmdLogic(
 		Authority: govAuthorityAddress,
 	}
 
-	// 4. Marshal the MsgExecLegacyContentWrapper into a raw JSON message
 	legacyContentWrapperBytes, err := json.Marshal(legacyContentWrapper)
 	if err != nil {
 		log.Fatalf("❌ Failed to marshal legacy content wrapper: %v", err)
 	}
 
-	// 5. Construct the top-level ProposalFile structure
 	proposalFile := ProposalFile{
-		Messages: []json.RawMessage{legacyContentWrapperBytes}, // Place the wrapped content here
-		Deposit:  deposit,                                      // Deposit as a string
-		// Proposer: "..." // You might need to derive the proposer address from 'mynode' here if required by ethermintd
+		Messages: []json.RawMessage{legacyContentWrapperBytes},
+		Deposit:  deposit,
 	}
 
 	proposalJSON, err := json.MarshalIndent(proposalFile, "", "  ")
@@ -1541,7 +1467,6 @@ func submitParamChangeProposalCmdLogic(
 	if err != nil {
 		log.Fatalf("❌ Failed to create temporary file for proposal: %v", err)
 	}
-	// defer os.Remove(tmpFile.Name())
 
 	if _, err := tmpFile.Write(proposalJSON); err != nil {
 		log.Fatalf("❌ Failed to write proposal JSON to temporary file: %v", err)
@@ -1554,11 +1479,11 @@ func submitParamChangeProposalCmdLogic(
 	log.Infof("Proposal Title: '%s', Description: '%s', Deposit: '%s'", title, description, deposit)
 	log.Infof("Using temporary proposal file: %s", tmpFile.Name())
 	log.Infof("Sending proposal transaction to local node RPC: tcp://localhost:%s", rpcPort)
-	log.Debugf("Generated Proposal JSON:\n%s", string(proposalJSON)) // Log the full JSON for debugging
+	log.Debugf("Generated Proposal JSON:\n%s", string(proposalJSON))
 
 	output, cmdErr := runCmdCaptureOutput(Mrmintd,
 		"tx", "gov", "submit-proposal",
-		tmpFile.Name(), // Pass the path to the temporary JSON file
+		tmpFile.Name(),
 		"--from", mynode,
 		"--home", mynode,
 		"--keyring-backend", "test",
