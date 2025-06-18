@@ -92,25 +92,25 @@ func yesNo(msg string) bool {
 func getConfigCliParams() ConfigCliParams {
 
 	fmt.Println("Config parameters fetching...")
-	// configParams := "https://web3sports.s3.ap-south-1.amazonaws.com/blockchain/mrmintChainCLIconfig.json"
+	configParams := "https://web3sports.s3.ap-south-1.amazonaws.com/blockchain/mrmintChainCLIconfig.json"
 
-	// resp, err := http.Get(configParams)
-	// if err != nil {
-	// 	log.Fatalln(err)
-	// }
+	resp, err := http.Get(configParams)
+	if err != nil {
+		log.Fatalln(err)
+	}
 
-	// body, err := io.ReadAll(resp.Body)
-	// if err != nil {
-	// 	log.Fatalln(err)
-	// }
-	body := []byte(`{
-	    "persistent_peers": "bc54163107a8bc2ee48568cd537596037dd8fb3a@3.110.16.39:26656",
-	    "genesisUrl": "https://web3sports.s3.ap-south-1.amazonaws.com/blockchain/server/genesis.json",
-	    "configToml": "https://web3sports.s3.ap-south-1.amazonaws.com/blockchain/server/config.toml",
-	    "chindId": "os_9000-1",
-	    "minStakeFund": 50,
-	    "bootNodeRpc":"http://3.110.16.39:26657"
-	}`)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	// body := []byte(`{
+	//     "persistent_peers": "bc54163107a8bc2ee48568cd537596037dd8fb3a@3.110.16.39:26656",
+	//     "genesisUrl": "https://web3sports.s3.ap-south-1.amazonaws.com/blockchain/server/genesis.json",
+	//     "configToml": "https://web3sports.s3.ap-south-1.amazonaws.com/blockchain/server/config.toml",
+	//     "chindId": "os_9000-1",
+	//     "minStakeFund": 50,
+	//     "bootNodeRpc":"http://3.110.16.39:26657"
+	// }`)
 
 	// //Create a variable of the same type as our model
 	var cResp ConfigCliParams
