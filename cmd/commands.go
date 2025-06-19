@@ -735,8 +735,9 @@ func unjailCmdLogic(mynode string) error {
 		"--home", mynode, // Home path for keyring and node data
 		"--keyring-backend", "test",
 		"--chain-id", configCliParams.ChaindId, // Use the chain ID from your config
-		"--gas", "auto", // Automatically estimate gas required
-		"--gas-adjustment", "1.1", // Add a buffer to gas estimate
+		"--gas", "auto",
+		"--gas-prices", "7aphoton", // Automatically estimate gas required
+		"--gas-adjustment", "1.4", // Add a buffer to gas estimate
 		"--node", "tcp://localhost:"+rpcPort, // Target your local node's RPC
 		"--yes", // Automatically confirm the transaction
 	)
@@ -748,7 +749,7 @@ func unjailCmdLogic(mynode string) error {
 	}
 
 	log.Infof("✅ Validator '%s' unjail transaction sent successfully! Transaction output:\n%s", mynode, output)
-	log.Info("Please monitor the chain and verify your validator's status using 'mrmintchain validator-info --mynode %s' after a few blocks.", mynode)
+	log.Info("Great!You unjail yourself, Please monitor the chain and verify your validator's status using 'mrmintchain validator-info --mynode %s' after a few blocks.", mynode)
 
 	return nil
 }
@@ -1119,7 +1120,7 @@ func withdrawRewardsCmdLogic(mynode string) error {
 		"--chain-id", configCliParams.ChaindId,
 		"--gas", "auto",
 		"--gas-prices", "7aphoton",
-		"--gas-adjustment", "1.1",
+		"--gas-adjustment", "1.3",
 		"--node", "tcp://localhost:"+rpcPort,
 		"--yes",
 	)
@@ -1508,10 +1509,8 @@ func submitParamChangeProposalCmdLogic(
 	return nil
 }
 
-// queryTxCmd defines the 'query-tx' command
 func queryTxCmd() *cobra.Command {
-	var mynode string // To specify the node directory to load .env
-	// txHash will be taken as an argument, so no flag needed for it
+	var mynode string
 
 	cmd := &cobra.Command{
 		Use:   "query-tx [transaction_hash]",
@@ -1519,46 +1518,37 @@ func queryTxCmd() *cobra.Command {
 		Long: `Queries the details of a specific blockchain transaction using its hash.
 Requires the transaction hash as an argument and the node name (--mynode)
 to load RPC connection details from the node's .env file.`,
-		Args: cobra.ExactArgs(1), // Ensures exactly one argument (the transaction hash) is provided
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			txHash := args[0] // Get the transaction hash from the command arguments
+			txHash := args[0]
 			return queryTxCmdLogic(mynode, txHash)
 		},
 	}
 
-	// Add the --mynode flag to specify which node's .env to load
 	cmd.Flags().StringVar(&mynode, "mynode", "", "Please enter your node name (directory where .env is located)")
-	cmd.MarkFlagRequired("mynode") // Make the --mynode flag mandatory
+	cmd.MarkFlagRequired("mynode")
 	return cmd
 }
 
-// queryTxCmdLogic contains the core logic for querying transaction details
 func queryTxCmdLogic(mynode, txHash string) error {
-	// Load the .env file from the specified node directory
-	// This is crucial to get the RPC_PORT for connecting to your node
 	envPath := filepath.Join(mynode, ".env")
 	err := godotenv.Load(envPath)
 	if err != nil {
 		log.Fatalf("❌ Failed to load .env file from '%s' for node '%s': %v", envPath, mynode, err)
 	}
 
-	// Get the RPC port from the loaded environment variables
 	rpcPort := getEnvOrFail("RPC_PORT")
-	rpcLaddr := "tcp://localhost:" + rpcPort // Assuming RPC is exposed on localhost
+	rpcLaddr := "tcp://localhost:" + rpcPort
 
 	log.Infof("🔍 Attempting to query transaction %s using RPC endpoint: %s", txHash, rpcLaddr)
 
-	// Execute the 'ethermintd query tx' command
-	// We request JSON output for easier parsing if needed (even though we'll print raw here)
 	output, err := runCmdCaptureOutput(Mrmintd, "query", "tx", txHash, "--node", rpcLaddr, "--output", "json")
 	if err != nil {
 		log.Errorf("❌ Failed to query transaction %s: %s", txHash, err)
-		// Print the command's combined output for debugging
 		fmt.Fprintln(os.Stderr, "Command Output (Error):", output)
 		return err
 	}
 
-	// Print the raw JSON output of the transaction details to standard output
 	fmt.Println(output)
 	log.Info("✅ Transaction query complete.")
 	return nil
