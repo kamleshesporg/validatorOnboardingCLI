@@ -202,11 +202,11 @@ func addGenesisAccountLogic(mynode string) error {
 	log.Infof("Default ethm1 format : %s", ethm1Address)
 	log.Infof("Converted into Ethereum(0x) format : %s", ethAddress)
 
-	qrterminal.GenerateHalfBlock(ethAddress, qrterminal.L, os.Stdout)
+	// qrterminal.GenerateHalfBlock(ethAddress, qrterminal.L, os.Stdout)
 
-	log.Infof("📲 QR Code (scan it securely): Please send %d MNT coin to your validator wallet for validator staking.", configCliParams.MinStakeFund)
+	// log.Infof("📲 QR Code (scan it securely): Please send %d MNT coin to your validator wallet for validator staking.", configCliParams.MinStakeFund)
 
-	getConfirmationForPayment("Have you deposited MNT?", ethm1Address)
+	// getConfirmationForPayment("Have you deposited MNT?", ethm1Address)
 	return nil
 }
 
@@ -590,85 +590,111 @@ type DepositParams struct {
 }
 
 func stakeFundCmdLogic(mynode string) error {
+	configCliParams = getConfigCliParams() // Ensure config is loaded
+
+	getAddr := exec.Command(Mrmintd, "keys", "show", mynode, "-a", "--home", mynode, "--keyring-backend", "test")
+	addrOut, err := getAddr.Output()
+	if err != nil {
+		log.Errorf("Failed to get address for %s: %v", mynode, err)
+		return err
+	}
+	ethm1Address := strings.TrimSpace(string(addrOut))
+	if ethm1Address == "" {
+		log.Fatalf("Ethm1 address not found for key '%s'. Please ensure the key exists.", mynode)
+	}
+
+	ethAddress, err := Bech32ToEthAddress(ethm1Address)
+	if err != nil {
+		log.Fatalf("Invalid bech32 address derived for QR: %v", err)
+	}
+
+	log.Info("Its your validator wallet for staking: ")
+	log.Infof("Default ethm1 format : %s", ethm1Address)
+	log.Infof("Converted into Ethereum(0x) format : %s", ethAddress)
+
+	// Generate QR Code
+	qrterminal.GenerateHalfBlock(ethAddress, qrterminal.L, os.Stdout)
+	log.Infof("📲 QR Code (scan it securely): Please send %d MNT coin to your validator wallet for validator staking.", configCliParams.MinStakeFund)
+
+	// Get confirmation for payment
+	getConfirmationForPayment("Have you deposited MNT?", ethm1Address)
+
+	log.Info("✅ Funds deposit confirmation received. Proceeding with staking setup...")
+
 	rpcPort := getEnvOrFail("RPC_PORT")
-	// bootRpc := getEnvOrFail("BOOT_NODE_RPC")
+
 	fmt.Println()
 	output, err := runCmdCaptureOutput("docker", "exec", "-i", mynode, Mrmintd, "query", "gov", "param", "deposit", "--node", "tcp://localhost:"+rpcPort)
 	if err != nil {
 		log.Fatalf("failed to get deposit params: %v", err)
 	}
-	var cResp DepositParams
+	var cResp DepositParams // Assuming DepositParams struct is defined elsewhere
 
 	err = yaml.Unmarshal([]byte(output), &cResp)
 	if err != nil {
-		log.Errorf("Get balance command failed: %s", err)
+		log.Errorf("Failed to unmarshal deposit params: %s", err)
+		return err // Return error if unmarshaling fails
 	}
 
-	log.Infof("Minimum Deposit: %s%s", cResp.MinDeposit[0].Amount, cResp.MinDeposit[0].Denom)
+	log.Infof("Minimum Deposit for Staking: %s%s", cResp.MinDeposit[0].Amount, cResp.MinDeposit[0].Denom)
 	fmt.Println()
 
-	getAddr := exec.Command(Mrmintd, "keys", "show", mynode, "-a", "--home", mynode, "--keyring-backend", "test")
-	addrOut, err := getAddr.Output()
-	if err != nil {
-		return err
-	}
-	ethm1Address := strings.TrimSpace(string(addrOut))
 	_, balance := getBalanceCmdLogic(ethm1Address)
-	ethAddress, _ := Bech32ToEthAddress(ethm1Address)
-	log.Printf("balance %d Of wallet : %s", balance, ethAddress)
+	log.Printf("Current wallet balance: %d MNT (for wallet: %s)", balance, ethAddress) // Clarified log message
 
 	pubkey, err := runCmdCaptureOutput("docker", "exec", "-i", mynode, Mrmintd, "tendermint", "show-validator", "--home", mynode)
 	if err != nil {
-		log.Fatalf("Failed to get pubkey: %v", err)
+		log.Fatalf("Failed to get validator pubkey: %v", err) // Clarified log message
 	}
 	pubkey = strings.TrimSpace(pubkey)
-	if !yesNo("Are you want to proceed now for staking?") {
+
+	if !yesNo("Are you ready to proceed now for creating the validator staking transaction?") { // Clarified prompt
 		log.Info("Staking process cancelled!")
-		return err
+		return fmt.Errorf("staking process cancelled by user") // Return a proper error
 	}
 
-	commissionRate := getStakingInputs("Please enter commission rate", "0.10")
-	log.Infof("✅ commission-rate: %s", commissionRate)
+	commissionRate := getStakingInputs("Please enter commission rate (e.g., 0.30 for 30%):", "0.30") // Clarified prompt
+	log.Infof("✅ Commission Rate: %s", commissionRate)
 
-	commissionMaxRate := getStakingInputs("Please enter commission max rate", "0.20")
-	log.Infof("✅ commission-max-rate: %s", commissionMaxRate)
+	commissionMaxRate := getStakingInputs("Please enter maximum commission rate (e.g., 0.50 for 50%):", "0.50") // Clarified prompt
+	log.Infof("✅ Maximum Commission Rate: %s", commissionMaxRate)
 
-	commissionMaxChangeRate := getStakingInputs("Please enter commission max change rate", "0.01")
-	log.Infof("✅ commission-max-change-rate: %s", commissionMaxChangeRate)
+	commissionMaxChangeRate := getStakingInputs("Please enter daily maximum commission change rate (e.g., 0.05 for 5% change per day):", "0.05") // Clarified prompt
+	log.Infof("✅ Maximum Daily Commission Change Rate: %s", commissionMaxChangeRate)
 
 	fmt.Println()
-	log.Print("🔑 Your staking process almost done. Press Enter to continue...")
+	log.Print("🔑 Preparing staking transaction. Press Enter to continue...")
 	fmt.Scanln()
 
 	output, err = runCmdCaptureOutput("docker", "exec", "-i", mynode,
 		Mrmintd,
 		"tx", "staking", "create-validator",
-		"--amount", cResp.MinDeposit[0].Amount+""+cResp.MinDeposit[0].Denom,
+		"--amount", cResp.MinDeposit[0].Amount+""+cResp.MinDeposit[0].Denom, // Amount for self-delegation from deposit param
 		"--pubkey", pubkey,
-		"--home", mynode,
+		"--home", mynode, // Home path inside the Docker container
 		"--moniker", mynode,
-		// "--chain-id","os_9000-1",
+		// "--chain-id","os_9000-1", // Keep commented as per your original snippet
 		"--commission-rate", commissionRate,
 		"--commission-max-rate", commissionMaxRate,
 		"--commission-max-change-rate", commissionMaxChangeRate,
-		"--min-self-delegation=1",
-		"--from", mynode,
+		"--min-self-delegation=1", // This is usually 1 unit of smallest denom
+		"--from", mynode,          // Key name for signing
 		"--keyring-backend=test",
-		"--home", mynode, // double-check this format
+		"--home", mynode, // This --home is for the keys backend context inside container
 		"--node", "tcp://localhost:"+rpcPort,
-		"--gas-prices", "7aphoton",
+		"--gas-prices", "7mnt", // Ensure this matches your chain's accepted gas denom
 		"--gas", "auto",
 		"--gas-adjustment", "1.1",
-		"--yes",
+		"--yes", // Auto-confirm transaction
 	)
 	if err != nil {
-		log.Errorf("Stake command failed : %s", output)
+		log.Errorf("❌ Stake command failed: %s", output)
 		return err
 	}
-	log.Infof("Stake Output : %s", output)
+	log.Infof("✅ Stake Transaction Output: %s", output)
 	fmt.Println()
-	log.Infof("You can copy staking tx hash and check details on explorer or use hash detail commands")
-	return err
+	log.Infof("You can copy the staking transaction hash from above and check its details on an explorer or use the 'query-tx' command.")
+	return nil
 }
 
 func getValidatorStatusCmd() *cobra.Command {
@@ -735,8 +761,9 @@ func unjailCmdLogic(mynode string) error {
 		"--home", mynode, // Home path for keyring and node data
 		"--keyring-backend", "test",
 		"--chain-id", configCliParams.ChaindId, // Use the chain ID from your config
-		"--gas", "auto", // Automatically estimate gas required
-		"--gas-adjustment", "1.1", // Add a buffer to gas estimate
+		"--gas", "auto",
+		"--gas-prices", "7mnt", // Automatically estimate gas required
+		"--gas-adjustment", "1.4", // Add a buffer to gas estimate
 		"--node", "tcp://localhost:"+rpcPort, // Target your local node's RPC
 		"--yes", // Automatically confirm the transaction
 	)
@@ -748,7 +775,7 @@ func unjailCmdLogic(mynode string) error {
 	}
 
 	log.Infof("✅ Validator '%s' unjail transaction sent successfully! Transaction output:\n%s", mynode, output)
-	log.Info("Please monitor the chain and verify your validator's status using 'mrmintchain validator-info --mynode %s' after a few blocks.", mynode)
+	log.Info("Great!You unjail yourself, Please monitor the chain and verify your validator's status using 'mrmintchain validator-info --mynode %s' after a few blocks.", mynode)
 
 	return nil
 }
@@ -853,7 +880,7 @@ func setWithdrawAddressLogic(mynode string, address string) error {
 		"--from", mynode,
 		"--home", mynode,
 		"--chain-id", configCliParams.ChaindId,
-		"--gas-prices", "7aphoton",
+		"--gas-prices", "7mnt",
 		"--keyring-backend", "test",
 		"--gas-adjustment", "1.1",
 		"--node", "tcp://localhost:"+rpcPort,
@@ -884,7 +911,7 @@ func delegateSelfStakeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&mynode, "mynode", "", "Please enter your node name (key name for your validator account)")
 	cmd.MarkFlagRequired("mynode")
 
-	cmd.Flags().StringVar(&amount, "amount", "", "Amount of tokens to delegate (e.g., 1000000000000000000aphoton)")
+	cmd.Flags().StringVar(&amount, "amount", "", "Amount of tokens to delegate (e.g., 1000000000000000000mnt)")
 	cmd.MarkFlagRequired("amount")
 
 	return cmd
@@ -965,7 +992,7 @@ func delegateSelfStakeLogic(mynode string, amount string) error {
 		"--home", mynode,
 		"--keyring-backend", "test", // Match the backend
 		"--chain-id", configCliParams.ChaindId,
-		"--gas-prices", "7aphoton",
+		"--gas-prices", "7mnt",
 		"--gas-adjustment", "1.1",
 		"--node", "tcp://localhost:"+rpcPort,
 		"--yes",
@@ -996,7 +1023,7 @@ The tokens will be locked for the unbonding period (e.g., 21 days) before becomi
 	cmd.Flags().StringVar(&mynode, "mynode", "", "Please enter your node name (key name of the validator)")
 	cmd.MarkFlagRequired("mynode")
 
-	cmd.Flags().StringVar(&amount, "amount", "", "Amount of tokens to unstake (e.g., 50aphoton)")
+	cmd.Flags().StringVar(&amount, "amount", "", "Amount of tokens to unstake (e.g., 50mnt)")
 	cmd.MarkFlagRequired("amount")
 
 	return cmd
@@ -1057,7 +1084,7 @@ func unstakeCmdLogic(mynode string, amount string) error {
 		"--home", mynode, // Pass --home for keyring access
 		"--keyring-backend", "test",
 		"--chain-id", configCliParams.ChaindId,
-		"--gas-prices", "7aphoton",
+		"--gas-prices", "7mnt",
 		"--gas-adjustment", "1.1",
 		"--node", "tcp://localhost:"+rpcPort, // Target your local node's RPC
 		"--yes", // Automatically confirm transaction
@@ -1118,8 +1145,8 @@ func withdrawRewardsCmdLogic(mynode string) error {
 		"--keyring-backend", "test",
 		"--chain-id", configCliParams.ChaindId,
 		"--gas", "auto",
-		"--gas-prices", "7aphoton",
-		"--gas-adjustment", "1.1",
+		"--gas-prices", "7mnt",
+		"--gas-adjustment", "1.3",
 		"--node", "tcp://localhost:"+rpcPort,
 		"--yes",
 	)
@@ -1211,7 +1238,7 @@ func editCommissionCmdLogic(mynode string, commissionRate string) error {
 		"--keyring-backend", "test",
 		"--chain-id", configCliParams.ChaindId,
 		"--gas", "auto",
-		"--gas-prices", "7aphoton", // Explicitly setting gas prices
+		"--gas-prices", "7mnt", // Explicitly setting gas prices
 		"--gas-adjustment", "1.1",
 		"--node", "tcp://localhost:"+rpcPort, // Target your local node's RPC
 		"--yes", // Automatically confirm transaction
@@ -1347,7 +1374,7 @@ func voteProposalCmdLogic(mynode string, proposalID uint64, voteOption string) e
 		"--keyring-backend", "test",
 		"--chain-id", configCliParams.ChaindId,
 		"--gas", "auto",
-		"--gas-prices", "7aphoton",
+		"--gas-prices", "7mnt",
 		"--gas-adjustment", "1.1",
 		"--node", "tcp://localhost:"+rpcPort, // Target your local node's RPC
 		"--yes",
@@ -1381,7 +1408,7 @@ func submitParamChangeProposalCmd() *cobra.Command {
 This command generates a temporary JSON file for the proposal content.
 It's used for parameters related to 'mint', 'rewards' (distribution), 'gov', 'staking', etc.
 The proposal requires an initial deposit to enter the voting period.
-Example: --module "mint" --param-key "MintDenom" --param-value "\"aphoton\""`, // Escaped quotes for JSON string
+Example: --module "mint" --param-key "MintDenom" --param-value "\"mnt\""`, // Escaped quotes for JSON string
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return submitParamChangeProposalCmdLogic(mynode, title, description, deposit, module, paramKey, paramValue)
 		},
@@ -1392,13 +1419,13 @@ Example: --module "mint" --param-key "MintDenom" --param-value "\"aphoton\""`, /
 	cmd.MarkFlagRequired("title")
 	cmd.Flags().StringVar(&description, "description", "", "Description of the proposal")
 	cmd.MarkFlagRequired("description")
-	cmd.Flags().StringVar(&deposit, "deposit", "", "Initial deposit amount (e.g., 1000000000000000000aphoton)")
+	cmd.Flags().StringVar(&deposit, "deposit", "", "Initial deposit amount (e.g., 1000000000000000000mnt)")
 	cmd.MarkFlagRequired("deposit")
 	cmd.Flags().StringVar(&module, "module", "", "Name of the module to change parameter in (e.g., mint, distribution, gov, staking)")
 	cmd.MarkFlagRequired("module")
 	cmd.Flags().StringVar(&paramKey, "param-key", "", "Key of the parameter to change within the module (e.g., MintDenom, CommunityTax)")
 	cmd.MarkFlagRequired("param-key")
-	cmd.Flags().StringVar(&paramValue, "param-value", "", "New value for the parameter (must be correctly formatted JSON string if complex, e.g., '\"aphoton\"' for a string value, or '\"1000\"' for a number, or '{\"key\":\"value\"}' for an object)")
+	cmd.Flags().StringVar(&paramValue, "param-value", "", "New value for the parameter (must be correctly formatted JSON string if complex, e.g., '\"mnt\"' for a string value, or '\"1000\"' for a number, or '{\"key\":\"value\"}' for an object)")
 	cmd.MarkFlagRequired("param-value")
 
 	return cmd
@@ -1489,7 +1516,7 @@ func submitParamChangeProposalCmdLogic(
 		"--keyring-backend", "test",
 		"--chain-id", configCliParams.ChaindId,
 		"--gas", "auto",
-		"--gas-prices", "7aphoton",
+		"--gas-prices", "7mnt",
 		"--gas-adjustment", "1.1",
 		"--node", "tcp://localhost:"+rpcPort,
 		"--yes",
@@ -1508,10 +1535,8 @@ func submitParamChangeProposalCmdLogic(
 	return nil
 }
 
-// queryTxCmd defines the 'query-tx' command
 func queryTxCmd() *cobra.Command {
-	var mynode string // To specify the node directory to load .env
-	// txHash will be taken as an argument, so no flag needed for it
+	var mynode string
 
 	cmd := &cobra.Command{
 		Use:   "query-tx [transaction_hash]",
@@ -1519,46 +1544,37 @@ func queryTxCmd() *cobra.Command {
 		Long: `Queries the details of a specific blockchain transaction using its hash.
 Requires the transaction hash as an argument and the node name (--mynode)
 to load RPC connection details from the node's .env file.`,
-		Args: cobra.ExactArgs(1), // Ensures exactly one argument (the transaction hash) is provided
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			txHash := args[0] // Get the transaction hash from the command arguments
+			txHash := args[0]
 			return queryTxCmdLogic(mynode, txHash)
 		},
 	}
 
-	// Add the --mynode flag to specify which node's .env to load
 	cmd.Flags().StringVar(&mynode, "mynode", "", "Please enter your node name (directory where .env is located)")
-	cmd.MarkFlagRequired("mynode") // Make the --mynode flag mandatory
+	cmd.MarkFlagRequired("mynode")
 	return cmd
 }
 
-// queryTxCmdLogic contains the core logic for querying transaction details
 func queryTxCmdLogic(mynode, txHash string) error {
-	// Load the .env file from the specified node directory
-	// This is crucial to get the RPC_PORT for connecting to your node
 	envPath := filepath.Join(mynode, ".env")
 	err := godotenv.Load(envPath)
 	if err != nil {
 		log.Fatalf("❌ Failed to load .env file from '%s' for node '%s': %v", envPath, mynode, err)
 	}
 
-	// Get the RPC port from the loaded environment variables
 	rpcPort := getEnvOrFail("RPC_PORT")
-	rpcLaddr := "tcp://localhost:" + rpcPort // Assuming RPC is exposed on localhost
+	rpcLaddr := "tcp://localhost:" + rpcPort
 
 	log.Infof("🔍 Attempting to query transaction %s using RPC endpoint: %s", txHash, rpcLaddr)
 
-	// Execute the 'ethermintd query tx' command
-	// We request JSON output for easier parsing if needed (even though we'll print raw here)
 	output, err := runCmdCaptureOutput(Mrmintd, "query", "tx", txHash, "--node", rpcLaddr, "--output", "json")
 	if err != nil {
 		log.Errorf("❌ Failed to query transaction %s: %s", txHash, err)
-		// Print the command's combined output for debugging
 		fmt.Fprintln(os.Stderr, "Command Output (Error):", output)
 		return err
 	}
 
-	// Print the raw JSON output of the transaction details to standard output
 	fmt.Println(output)
 	log.Info("✅ Transaction query complete.")
 	return nil

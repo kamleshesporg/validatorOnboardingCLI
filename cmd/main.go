@@ -77,7 +77,7 @@ func autoRunCmd() *cobra.Command {
 				return fmt.Errorf("❌ collect gentxs failed: %w", err)
 			}
 
-			fmt.Println("✅ Validator setup completed successfully. Please run stake command to become validator.")
+			fmt.Println("✅ Validator setup completed successfully. Please run start-node command to start validator node.")
 			return nil
 		},
 	}
