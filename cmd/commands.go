@@ -65,11 +65,6 @@ type ProposalFile struct {
 	Metadata string            `json:"metadata,omitempty"` // Optional metadata
 }
 
-type TendermintPubKey struct {
-	Type string `json:"@type"`
-	Key  string `json:"key"` // This is the Base64 encoded public key we need
-}
-
 func runCmd(command string, args ...string) error {
 	fmt.Printf("Running: %s %v\n", command, args)
 	cmd := exec.Command(command, args...)
@@ -596,6 +591,7 @@ type DepositParams struct {
 
 func stakeFundCmdLogic(mynode string) error {
 	configCliParams = getConfigCliParams() // Ensure config is loaded
+
 	getAddr := exec.Command(Mrmintd, "keys", "show", mynode, "-a", "--home", mynode, "--keyring-backend", "test")
 	addrOut, err := getAddr.Output()
 	if err != nil {
@@ -606,74 +602,75 @@ func stakeFundCmdLogic(mynode string) error {
 	if ethm1Address == "" {
 		log.Fatalf("Ethm1 address not found for key '%s'. Please ensure the key exists.", mynode)
 	}
+
 	ethAddress, err := Bech32ToEthAddress(ethm1Address)
 	if err != nil {
 		log.Fatalf("Invalid bech32 address derived for QR: %v", err)
 	}
+
 	log.Info("Its your validator wallet for staking: ")
 	log.Infof("Default ethm1 format : %s", ethm1Address)
 	log.Infof("Converted into Ethereum(0x) format : %s", ethAddress)
+
 	// Generate QR Code
 	qrterminal.GenerateHalfBlock(ethAddress, qrterminal.L, os.Stdout)
 	log.Infof("📲 QR Code (scan it securely): Please send %d MNT coin to your validator wallet for validator staking.", configCliParams.MinStakeFund)
+
 	// Get confirmation for payment
 	getConfirmationForPayment("Have you deposited MNT?", ethm1Address)
+
 	log.Info("✅ Funds deposit confirmation received. Proceeding with staking setup...")
+
 	rpcPort := getEnvOrFail("RPC_PORT")
+
 	fmt.Println()
 	output, err := runCmdCaptureOutput("docker", "exec", "-i", mynode, Mrmintd, "query", "gov", "param", "deposit", "--node", "tcp://localhost:"+rpcPort)
 	if err != nil {
 		log.Fatalf("failed to get deposit params: %v", err)
 	}
 	var cResp DepositParams // Assuming DepositParams struct is defined elsewhere
+
 	err = yaml.Unmarshal([]byte(output), &cResp)
 	if err != nil {
 		log.Errorf("Failed to unmarshal deposit params: %s", err)
 		return err // Return error if unmarshaling fails
 	}
+
 	log.Infof("Minimum Deposit for Staking: %s%s", cResp.MinDeposit[0].Amount, cResp.MinDeposit[0].Denom)
 	fmt.Println()
+
 	_, balance := getBalanceCmdLogic(ethm1Address)
 	log.Printf("Current wallet balance: %d MNT (for wallet: %s)", balance, ethAddress) // Clarified log message
 
-	// --- MODIFICATION STARTS HERE ---
-	rawPubkeyOutput, err := runCmdCaptureOutput("docker", "exec", "-i", mynode, Mrmintd, "tendermint", "show-validator", "--home", mynode)
+	pubkey, err := runCmdCaptureOutput("docker", "exec", "-i", mynode, Mrmintd, "tendermint", "show-validator", "--home", mynode)
 	if err != nil {
-		log.Fatalf("Failed to get raw validator pubkey output: %v", err)
+		log.Fatalf("Failed to get validator pubkey: %v", err) // Clarified log message
 	}
-	rawPubkeyOutput = strings.TrimSpace(rawPubkeyOutput)
-
-	var tmPubKey TendermintPubKey
-	err = json.Unmarshal([]byte(rawPubkeyOutput), &tmPubKey)
-	if err != nil {
-		log.Fatalf("Failed to unmarshal tendermint pubkey JSON: %v. Raw output: %s", err, rawPubkeyOutput)
-	}
-	// Use only the Base64 encoded 'Key' field
-	pubkeyToUse := tmPubKey.Key
-	if pubkeyToUse == "" {
-		log.Fatalf("Extracted public key is empty. Raw output: %s", rawPubkeyOutput)
-	}
-	log.Infof("✅ Extracted validator public key: %s", pubkeyToUse)
-	// --- MODIFICATION ENDS HERE ---
+	pubkey = strings.TrimSpace(pubkey)
 
 	if !yesNo("Are you ready to proceed now for creating the validator staking transaction?") { // Clarified prompt
 		log.Info("Staking process cancelled!")
 		return fmt.Errorf("staking process cancelled by user") // Return a proper error
 	}
+
 	commissionRate := getStakingInputs("Please enter commission rate (e.g., 0.30 for 30%):", "0.30") // Clarified prompt
 	log.Infof("✅ Commission Rate: %s", commissionRate)
+
 	commissionMaxRate := getStakingInputs("Please enter maximum commission rate (e.g., 0.50 for 50%):", "0.50") // Clarified prompt
 	log.Infof("✅ Maximum Commission Rate: %s", commissionMaxRate)
+
 	commissionMaxChangeRate := getStakingInputs("Please enter daily maximum commission change rate (e.g., 0.05 for 5% change per day):", "0.05") // Clarified prompt
 	log.Infof("✅ Maximum Daily Commission Change Rate: %s", commissionMaxChangeRate)
+
 	fmt.Println()
 	log.Print("🔑 Preparing staking transaction. Press Enter to continue...")
 	fmt.Scanln()
+
 	output, err = runCmdCaptureOutput("docker", "exec", "-i", mynode,
 		Mrmintd,
 		"tx", "staking", "create-validator",
 		"--amount", cResp.MinDeposit[0].Amount+""+cResp.MinDeposit[0].Denom, // Amount for self-delegation from deposit param
-		"--pubkey", pubkeyToUse, // --- USE THE EXTRACTED KEY HERE ---
+		"--pubkey", pubkey,
 		"--home", mynode, // Home path inside the Docker container
 		"--moniker", mynode,
 		// "--chain-id","os_9000-1", // Keep commented as per your original snippet
