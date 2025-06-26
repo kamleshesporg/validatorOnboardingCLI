@@ -1,8 +1,8 @@
 {
-    "persistent_peers": "7df931bf38a47be08f247fcd3ed338c1a2d1d280@3.7.51.53:26656",
+    "persistent_peers": "f871d7027967a8ba735b2a1263147080a6a46b2b@3.7.51.53:26656",
     "genesisUrl": "https://web3sports.s3.ap-south-1.amazonaws.com/blockchain/genesis.json",
     "configToml": "https://web3sports.s3.ap-south-1.amazonaws.com/blockchain/config.toml",
-    "chindId": "os_987501-1",
+    "chindId": "os_6201-1",
     "minStakeFund": 50,
     "bootNodeRpc":"http://3.7.51.53:26657"
 }
