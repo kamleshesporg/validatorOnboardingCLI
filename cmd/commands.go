@@ -682,9 +682,9 @@ func stakeFundCmdLogic(mynode string) error {
 		"--keyring-backend=test",
 		"--home", mynode, // This --home is for the keys backend context inside container
 		"--node", "tcp://localhost:"+rpcPort,
-		"--gas-prices", "7mnt", // Ensure this matches your chain's accepted gas denom
+		"--gas-prices", "14mnt", // Ensure this matches your chain's accepted gas denom
 		"--gas", "auto",
-		"--gas-adjustment", "1.1",
+		"--gas-adjustment", "1.2",
 		"--yes", // Auto-confirm transaction
 	)
 	if err != nil {
