@@ -250,8 +250,8 @@ func getBalanceCmdLogic(walletEthmAddress string) (bool, int64) {
 		exactBalance := new(big.Int).Div(bigAmount, wei)
 
 		// This block would only execute if balances was not empty.
-		log.Infof("💸 The balances is : %d %s", exactBalance, cResp.Balances[0].Denom)
-		log.Infof("💸 The Exact balances is : %s %s", cResp.Balances[0].Amount, cResp.Balances[0].Denom)
+		log.Infof("💸 The balance is : %d %s", exactBalance, cResp.Balances[0].Denom)
+		log.Infof("💸 The Exact balance is : %s %s", cResp.Balances[0].Amount, cResp.Balances[0].Denom)
 
 		return true, exactBalance.Int64()
 
