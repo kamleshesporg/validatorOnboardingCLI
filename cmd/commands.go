@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+
 	"math/big"
 	"os"
 	"os/exec"
@@ -17,6 +20,8 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/mdp/qrterminal"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
+
 	"gopkg.in/yaml.v2"
 )
 
@@ -37,6 +42,11 @@ type ParamChange struct {
 	Subspace string          `json:"subspace"`
 	Key      string          `json:"key"`
 	Value    json.RawMessage `json:"value"`
+}
+
+// LoginResponse defines the expected JSON structure from a successful login API call.
+type LoginResponse struct {
+	Token string `json:"token"`
 }
 
 type ParameterChangeProposalContent struct {
@@ -1577,5 +1587,79 @@ func queryTxCmdLogic(mynode, txHash string) error {
 
 	fmt.Println(output)
 	log.Info("✅ Transaction query complete.")
+	return nil
+}
+
+func loginCmd() *cobra.Command {
+	var email string
+	var password string
+
+	cmd := &cobra.Command{
+		Use:   "login",
+		Short: "Log in to the platform",
+		Long:  `Authenticates the user with the platform using an email, password, and 2FA token.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Securely prompt for the password if it's not provided as a flag.
+			if password == "" {
+				fmt.Print("Enter password: ")
+				bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
+				if err != nil {
+					return fmt.Errorf("failed to read password: %w", err)
+				}
+				password = string(bytePassword)
+				fmt.Println() // Add a newline for better formatting after password input.
+			}
+			return loginCmdLogic(email, password)
+		},
+	}
+	cmd.Flags().StringVar(&email, "email", "", "Your registered email address")
+	cmd.MarkFlagRequired("email")
+	cmd.Flags().StringVar(&password, "password", "", "Your password (it's more secure to omit this and be prompted)")
+	return cmd
+}
+
+func loginCmdLogic(email, password string) error {
+	log.Info("🔐 Authenticating with the platform...")
+
+	// Step 1: Create the JSON request body from the provided email and password.
+	requestBody, err := json.Marshal(map[string]string{
+		"email":    email,
+		"password": password,
+	})
+	if err != nil {
+		log.Errorf("Failed to create login request payload: %v", err)
+		return fmt.Errorf("internal error creating request: %w", err)
+	}
+
+	// Step 2: Make the API call to the login endpoint.
+	// Note: It's best practice to make this URL configurable, for example,
+	// by adding it to the remote config JSON file.
+	apiURL := "http://15.207.226.255:8961/api/auth/login"
+
+	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(requestBody))
+	if err != nil {
+		log.Errorf("Failed to call the login API: %v", err)
+		return fmt.Errorf("could not connect to the authentication server: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Step 3: Read and process the server's response.
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Errorf("Failed to read the API response: %v", err)
+		return fmt.Errorf("error reading response from server: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		log.Errorf("❌ Login failed. The server responded with status %d.", resp.StatusCode)
+		log.Errorf("Server message: %s", string(responseBody))
+		return fmt.Errorf("authentication failed with status: %s", resp.Status)
+	}
+
+	// You can optionally parse the successful JSON response here to extract and store a token.
+	// For now, we will just confirm the successful login.
+	log.Info("✅ Login successful!")
+	log.Debugf("Server response: %s", string(responseBody))
+
 	return nil
 }

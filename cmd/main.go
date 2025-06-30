@@ -42,6 +42,8 @@ func main() {
 		voteProposalCmd(),
 		submitParamChangeProposalCmd(),
 		queryTxCmd(),
+		loginCmd(),
+		logoutCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {

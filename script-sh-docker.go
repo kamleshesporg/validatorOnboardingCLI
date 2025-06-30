@@ -1,5 +1,4 @@
 
-
 docker ps -a && docker rm $(docker ps -a)
  
  
