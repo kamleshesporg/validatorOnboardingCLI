@@ -43,7 +43,7 @@ func main() {
 		submitParamChangeProposalCmd(),
 		queryTxCmd(),
 		loginCmd(),
-		logoutCmd(),
+		createValidatorCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {

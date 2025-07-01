@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	// For terminal display
 
@@ -533,6 +534,16 @@ type BlockResponse struct {
 }
 
 func checkBlockBeforeStake(mynode string) error {
+	// Step 1: Check if the validator has been registered with the platform first.
+	receiptPath := filepath.Join(mynode, ".validator-registered")
+	if _, err := os.Stat(receiptPath); os.IsNotExist(err) {
+		log.Errorf("Validator for node '%s' has not been registered with the platform yet.", mynode)
+		log.Infof("Please run the 'create-validator' command before staking.")
+		log.Infof("Example: mrmintchain create-validator --mynode %s --email <your-email> --token <your-2fa-token>", mynode)
+		return fmt.Errorf("prerequisite 'create-validator' command has not been run")
+	}
+	log.Info("✅ Pre-flight check passed: Validator is registered with the platform.")
+
 	// Load the .env file
 
 	err := godotenv.Load(filepath.Join(mynode, ".env"))
@@ -1592,39 +1603,40 @@ func queryTxCmdLogic(mynode, txHash string) error {
 
 func loginCmd() *cobra.Command {
 	var email string
-	var password string
+	var token string
 
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Log in to the platform",
-		Long:  `Authenticates the user with the platform using an email, password, and 2FA token.`,
+		Long:  `Authenticates the user with the platform using an email and 2FA token. You will be securely prompted for your password.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Securely prompt for the password if it's not provided as a flag.
-			if password == "" {
-				fmt.Print("Enter password: ")
-				bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
-				if err != nil {
-					return fmt.Errorf("failed to read password: %w", err)
-				}
-				password = string(bytePassword)
-				fmt.Println() // Add a newline for better formatting after password input.
+			// Always securely prompt for the password.
+			fmt.Print("Enter password: ")
+			bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
+			if err != nil {
+				return fmt.Errorf("failed to read password: %w", err)
 			}
-			return loginCmdLogic(email, password)
+			password := string(bytePassword)
+			fmt.Println() // Add a newline for better formatting after password input.
+
+			return loginCmdLogic(email, password, token)
 		},
 	}
 	cmd.Flags().StringVar(&email, "email", "", "Your registered email address")
 	cmd.MarkFlagRequired("email")
-	cmd.Flags().StringVar(&password, "password", "", "Your password (it's more secure to omit this and be prompted)")
+	cmd.Flags().StringVar(&token, "token", "", "Your token")
+
 	return cmd
 }
 
-func loginCmdLogic(email, password string) error {
+func loginCmdLogic(email, password string, token string) error {
 	log.Info("🔐 Authenticating with the platform...")
 
 	// Step 1: Create the JSON request body from the provided email and password.
 	requestBody, err := json.Marshal(map[string]string{
 		"email":    email,
 		"password": password,
+		"token":    token,
 	})
 	if err != nil {
 		log.Errorf("Failed to create login request payload: %v", err)
@@ -1634,7 +1646,7 @@ func loginCmdLogic(email, password string) error {
 	// Step 2: Make the API call to the login endpoint.
 	// Note: It's best practice to make this URL configurable, for example,
 	// by adding it to the remote config JSON file.
-	apiURL := "http://15.207.226.255:8961/api/auth/login"
+	apiURL := "http://15.207.226.255:8961/api/auth/login/verify-2fa"
 
 	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(requestBody))
 	if err != nil {
@@ -1659,7 +1671,222 @@ func loginCmdLogic(email, password string) error {
 	// You can optionally parse the successful JSON response here to extract and store a token.
 	// For now, we will just confirm the successful login.
 	log.Info("✅ Login successful!")
-	log.Debugf("Server response: %s", string(responseBody))
+	log.Info("Server response: %s", string(responseBody))
+
+	return nil
+}
+
+func createValidatorCmd() *cobra.Command {
+	var mynode string
+
+	cmd := &cobra.Command{
+		Use:   "create-validator",
+		Short: "Create a validator and update details after successful authentication",
+		Long: `This command first authenticates the user using the provided email and 2FA token.
+You will be securely prompted for your password. If authentication is successful, 
+it retrieves validator addresses and proceeds to update the 
+validator details using the provided API endpoint.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var email, password, token string
+
+			// Prompt for Email
+			fmt.Print("Enter registered email address: ")
+			_, err := fmt.Scanln(&email)
+			if err != nil {
+				return fmt.Errorf("failed to read email: %w", err)
+			}
+			if email == "" {
+				return fmt.Errorf("email cannot be empty")
+			}
+
+			// Prompt for Password (hidden)
+			fmt.Print("Enter registered password: ")
+			bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
+			if err != nil {
+				return fmt.Errorf("failed to read password: %w", err)
+			}
+			password = string(bytePassword)
+			fmt.Println() // Add a newline for better formatting after password input.
+			if password == "" {
+				return fmt.Errorf("password cannot be empty")
+			}
+
+			// Prompt for 2FA Token (hidden)
+			fmt.Print("Enter 2FA token: ")
+			byteToken, err := term.ReadPassword(int(os.Stdin.Fd()))
+			if err != nil {
+				return fmt.Errorf("failed to read 2FA token: %w", err)
+			}
+			token = string(byteToken)
+			fmt.Println() // Add a newline
+
+			// Step 1: Authenticate with the platform API.
+			log.Info("🔐 Authenticating with the platform...")
+			authToken, err := authenticateAndGetToken(email, password, token)
+			if err != nil {
+				return fmt.Errorf("platform authentication failed: %w", err)
+			}
+			log.Info("✅ Credentials verified successfully...")
+
+			// Step 2: Get validator addresses from the node key
+			log.Info("🔍 Retrieving validator addresses....")
+
+			// Get validator wallet address (ethm1...)
+			getWalletAddrCmd := exec.Command(Mrmintd, "keys", "show", mynode, "-a", "--home", mynode, "--keyring-backend", "test")
+			walletAddrOut, err := getWalletAddrCmd.Output()
+			if err != nil {
+				return fmt.Errorf("failed to get validator wallet address for '%s': %w. Output: %s", mynode, err, string(walletAddrOut))
+			}
+			validatorWalletAddress := strings.TrimSpace(string(walletAddrOut))
+
+			// Get validator operator address (ethmvaloper...)
+			getOperatorAddrCmd := exec.Command(Mrmintd, "keys", "show", mynode, "--bech", "val", "--home", mynode, "--keyring-backend", "test")
+			operatorAddrOut, err := getOperatorAddrCmd.Output()
+			if err != nil {
+				return fmt.Errorf("failed to get validator operator address for '%s': %w. Output: %s", mynode, err, string(operatorAddrOut))
+			}
+			var keyInfo []struct {
+				Address string `yaml:"address"`
+			}
+			if err := yaml.Unmarshal(operatorAddrOut, &keyInfo); err != nil {
+				return fmt.Errorf("failed to parse validator operator address output: %w. Output: %s", err, string(operatorAddrOut))
+			}
+			if len(keyInfo) == 0 || keyInfo[0].Address == "" {
+				return fmt.Errorf("could not find validator operator address in output: %s", string(operatorAddrOut))
+			}
+			validatorOperatorAddress := keyInfo[0].Address
+
+			// Convert wallet address to ETH format (0x...)
+			validatorEthAddress, err := Bech32ToEthAddress(validatorWalletAddress)
+			if err != nil {
+				return fmt.Errorf("failed to convert bech32 address to eth address: %w", err)
+			}
+
+			// Step 3: Update validator details via API.
+			log.Info("🔄 Updating validator details in the platform...")
+			return updateValidatorInfoAPI(authToken, email, validatorOperatorAddress, validatorWalletAddress, validatorEthAddress, mynode)
+		},
+	}
+
+	cmd.Flags().StringVar(&mynode, "mynode", "", "Your node name (to derive validator addresses)")
+	cmd.MarkFlagRequired("mynode")
+
+	return cmd
+}
+
+// authenticateAndGetToken handles the authentication API call and returns the token.
+func authenticateAndGetToken(email, password, token string) (string, error) {
+	// Step 1: Create the JSON request body from the provided email, password, and 2FA token.
+	requestBody, err := json.Marshal(map[string]string{
+		"email":    email,
+		"password": password,
+		"token":    token,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to create authentication request payload: %w", err)
+	}
+
+	// Step 2: Make the API call to the authentication endpoint.
+	apiURL := "http://15.207.226.255:8961/api/auth/login/verify-2fa" // Replace with your actual authentication endpoint
+	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(requestBody))
+	if err != nil {
+		return "", fmt.Errorf("could not connect to the authentication server: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Step 3: Read and process the server's response.
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("error reading authentication response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("authentication failed with status %s: %s", resp.Status, string(responseBody))
+	}
+
+	// Step 4: Parse the response flexibly and find the token.
+	var responseData map[string]interface{}
+	if err := json.Unmarshal(responseBody, &responseData); err != nil {
+		return "", fmt.Errorf("invalid JSON response from server: %w", err)
+	}
+
+	// Attempt to find the token in common locations
+	var authToken string
+
+	// Case 1: token is nested under "data" (e.g., {"data": {"token": "..."}})
+	if data, ok := responseData["data"].(map[string]interface{}); ok {
+		if token, ok := data["token"].(string); ok {
+			authToken = token
+		}
+	}
+
+	// Case 2: token is at the top level (e.g., {"token": "..."})
+	if authToken == "" {
+		if token, ok := responseData["token"].(string); ok {
+			authToken = token
+		}
+	}
+
+	// If token is still not found, fail with a detailed error message.
+	if authToken == "" {
+		// Pretty-print the JSON response for better readability.
+		prettyResponse, _ := json.MarshalIndent(responseData, "", "  ")
+		return "", fmt.Errorf("authentication failed: no token received from server. Full response:\n%s", string(prettyResponse))
+	}
+
+	return authToken, nil
+}
+
+// updateValidatorInfoAPI sends the validator details to the specified endpoint.
+func updateValidatorInfoAPI(authToken, email, operatorAddr, walletAddr, ethAddr, mynode string) error {
+	// IMPORTANT: This URL should be made configurable, e.g., from the remote config file.
+	apiURL := "http://15.207.226.255:8961/api/validator/updateValidatorInfo"
+
+	// Create the request body
+	requestBody, err := json.Marshal(map[string]string{
+		"email":                    email,
+		"validatorOperatorAddress": operatorAddr,
+		"validatorWalletAddress":   walletAddr,
+		"validatorEthAddress":      ethAddr,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create update-validator-info request payload: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(requestBody))
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
+	// Set headers for the authenticated request
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to call the update validator info API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read API response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("API call failed with status %s: %s", resp.Status, string(responseBody))
+	}
+
+	log.Info("✅ Validator details successfully updated in the platform.")
+
+	// Create a receipt file to indicate that this step has been completed successfully.
+	receiptPath := filepath.Join(mynode, ".validator-registered")
+	receiptContent := fmt.Sprintf("Validator for node '%s' registered on %s", mynode, time.Now().Format(time.RFC3339))
+	if err := os.WriteFile(receiptPath, []byte(receiptContent), 0644); err != nil {
+		// This is not a critical failure, so we just warn the user.
+		log.Warnf("Could not write registration receipt file at %s: %v", receiptPath, err)
+	}
 
 	return nil
 }
