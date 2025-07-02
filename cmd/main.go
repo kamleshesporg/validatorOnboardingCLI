@@ -42,7 +42,6 @@ func main() {
 		voteProposalCmd(),
 		submitParamChangeProposalCmd(),
 		queryTxCmd(),
-		loginCmd(),
 		createValidatorCmd(),
 	)
 

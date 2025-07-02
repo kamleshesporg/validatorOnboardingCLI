@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -515,7 +516,7 @@ func stakeFundCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "stake",
-		Short: "Stake the Ethermint node",
+		Short: "Stake the Ethermint node and update staking status on the platform",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return checkBlockBeforeStake(mynode)
 		},
@@ -600,7 +601,19 @@ func checkBlockBeforeStake(mynode string) error {
 	}
 	log.Info("\xE2\x9C\x94 The node is properly synced with the bootnode!")
 
-	return stakeFundCmdLogic(mynode)
+	// Prompt for email now that the node is synced.
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter your registered platform email address: ")
+	email, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("failed to read email: %w", err)
+	}
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return fmt.Errorf("email cannot be empty")
+	}
+
+	return stakeFundCmdLogic(mynode, email)
 }
 
 type DepositParams struct {
@@ -610,7 +623,7 @@ type DepositParams struct {
 	} `yaml:"min_deposit"`
 }
 
-func stakeFundCmdLogic(mynode string) error {
+func stakeFundCmdLogic(mynode, email string) error {
 	configCliParams = getConfigCliParams() // Ensure config is loaded
 
 	getAddr := exec.Command(Mrmintd, "keys", "show", mynode, "-a", "--home", mynode, "--keyring-backend", "test")
@@ -715,7 +728,43 @@ func stakeFundCmdLogic(mynode string) error {
 	log.Infof("✅ Stake Transaction Output: %s", output)
 	fmt.Println()
 	log.Infof("You can copy the staking transaction hash from above and check its details on an explorer or use the 'query-tx' command.")
+	// After successful on-chain staking, update the backend database.
+	log.Info("🔄 Updating validator staking status...")
+	if err := updateValidatorStakingInfoAPI(email); err != nil {
+		// Log a warning but do not fail the command, as the on-chain action was successful.
+		log.Warnf("⚠️  Could not update validator staking status in the database: %v", err)
+		log.Warnf("The on-chain staking was successful, but please notify the platform administrator to update your status manually.")
+	} else {
+		log.Info("✅ Validator staking status successfully updated...")
+	}
 	return nil
+}
+
+func updateValidatorStakingInfoAPI(email string) error {
+	apiURL := "http://15.207.226.255:8961/api/validator/updateValidatorStakingInfo"
+
+	requestBody, err := json.Marshal(map[string]string{
+		"email": email,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create request payload %s", err)
+	}
+	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(requestBody))
+
+	if err != nil {
+		return fmt.Errorf("failed to call the update staking info API: %w", err)
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		responseBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API call failed with status %s: %s", resp.Status, string(responseBody))
+	}
+
+	log.Debugf("Update staking info API response successful.")
+	return nil
+
 }
 
 func getValidatorStatusCmd() *cobra.Command {
@@ -857,21 +906,32 @@ func setWithdrawAddress() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "withdraw-address",
-		Short: "Set withdraw address to withdraw your fund",
+		Short: "Set on-chain withdraw address and update it on the platform",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return setWithdrawAddressLogic(mynode, address)
+			// Prompt for email
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Print("Enter your registered platform email address: ")
+			email, err := reader.ReadString('\n')
+			if err != nil {
+				return fmt.Errorf("failed to read email: %w", err)
+			}
+			email = strings.TrimSpace(email)
+			if email == "" {
+				return fmt.Errorf("email cannot be empty")
+			}
+			return setWithdrawAddressLogic(mynode, address, email)
 		},
 	}
 	cmd.Flags().StringVar(&mynode, "mynode", "", "Please enter your node name")
 	cmd.MarkFlagRequired("mynode")
 
-	cmd.Flags().StringVar(&address, "address", "", "Please enter your withdraw wallet address")
+	cmd.Flags().StringVar(&address, "address", "", "The bech32 wallet address to set for withdrawals")
 	cmd.MarkFlagRequired("address")
 
 	return cmd
 }
 
-func setWithdrawAddressLogic(mynode string, address string) error {
+func setWithdrawAddressLogic(mynode, address, email string) error {
 	configCliParams = getConfigCliParams()
 
 	err := godotenv.Load(filepath.Join(mynode, ".env"))
@@ -914,7 +974,43 @@ func setWithdrawAddressLogic(mynode string, address string) error {
 	}
 
 	log.Infof("✅ Withdraw address set successfully! Transaction output:\n%s", output)
-	log.Info("Please monitor the chain to confirm the transaction.")
+	log.Info("Please monitor the chain to confirm the on-chain transaction.")
+
+	// Step 2: Update the withdraw address on the platform via API.
+	log.Info("🔄 Updating withdraw address...")
+	withdrawEthAddress, err := Bech32ToEthAddress(address)
+	if err != nil {
+		log.Warnf("⚠️ Could not convert withdraw address '%s' to ETH format for API update: %v", address, err)
+		log.Warnf("The on-chain action was successful, but please notify the platform administrator to update your withdraw address manually.")
+		return nil // Don't fail the command
+	}
+
+	// Create request body
+	requestBody, err := json.Marshal(map[string]string{
+		"email":                    email,
+		"validatorWithdrawAddress": withdrawEthAddress,
+	})
+	if err != nil {
+		log.Warnf("⚠️ Failed to create API request payload: %v", err)
+		return nil // Don't fail
+	}
+
+	// Make API call
+	apiURL := "http://15.207.226.255:8961/api/validator/updateValidatorWithdrawAddress"
+	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(requestBody))
+	if err != nil {
+		log.Warnf("⚠️ Failed to call the update withdraw address API: %v", err)
+		return nil // Don't fail
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		responseBody, _ := io.ReadAll(resp.Body)
+		log.Warnf("⚠️ API call to update withdraw address failed with status %s: %s", resp.Status, string(responseBody))
+	} else {
+		log.Info("✅ Withdraw address successfully updated...")
+	}
+
 	return nil
 }
 
@@ -1601,80 +1697,80 @@ func queryTxCmdLogic(mynode, txHash string) error {
 	return nil
 }
 
-func loginCmd() *cobra.Command {
-	var email string
-	var token string
+// func loginCmd() *cobra.Command {
+// 	var email string
+// 	var token string
 
-	cmd := &cobra.Command{
-		Use:   "login",
-		Short: "Log in to the platform",
-		Long:  `Authenticates the user with the platform using an email and 2FA token. You will be securely prompted for your password.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// Always securely prompt for the password.
-			fmt.Print("Enter password: ")
-			bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
-			if err != nil {
-				return fmt.Errorf("failed to read password: %w", err)
-			}
-			password := string(bytePassword)
-			fmt.Println() // Add a newline for better formatting after password input.
+// 	cmd := &cobra.Command{
+// 		Use:   "login",
+// 		Short: "Log in to the platform",
+// 		Long:  `Authenticates the user with the platform using an email and 2FA token. You will be securely prompted for your password.`,
+// 		RunE: func(cmd *cobra.Command, args []string) error {
+// 			// Always securely prompt for the password.
+// 			fmt.Print("Enter password: ")
+// 			bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
+// 			if err != nil {
+// 				return fmt.Errorf("failed to read password: %w", err)
+// 			}
+// 			password := string(bytePassword)
+// 			fmt.Println() // Add a newline for better formatting after password input.
 
-			return loginCmdLogic(email, password, token)
-		},
-	}
-	cmd.Flags().StringVar(&email, "email", "", "Your registered email address")
-	cmd.MarkFlagRequired("email")
-	cmd.Flags().StringVar(&token, "token", "", "Your token")
+// 			return loginCmdLogic(email, password, token)
+// 		},
+// 	}
+// 	cmd.Flags().StringVar(&email, "email", "", "Your registered email address")
+// 	cmd.MarkFlagRequired("email")
+// 	cmd.Flags().StringVar(&token, "token", "", "Your token")
 
-	return cmd
-}
+// 	return cmd
+// }
 
-func loginCmdLogic(email, password string, token string) error {
-	log.Info("🔐 Authenticating with the platform...")
+// func loginCmdLogic(email, password string, token string) error {
+// 	log.Info("🔐 Authenticating with the platform...")
 
-	// Step 1: Create the JSON request body from the provided email and password.
-	requestBody, err := json.Marshal(map[string]string{
-		"email":    email,
-		"password": password,
-		"token":    token,
-	})
-	if err != nil {
-		log.Errorf("Failed to create login request payload: %v", err)
-		return fmt.Errorf("internal error creating request: %w", err)
-	}
+// 	// Step 1: Create the JSON request body from the provided email and password.
+// 	requestBody, err := json.Marshal(map[string]string{
+// 		"email":    email,
+// 		"password": password,
+// 		"token":    token,
+// 	})
+// 	if err != nil {
+// 		log.Errorf("Failed to create login request payload: %v", err)
+// 		return fmt.Errorf("internal error creating request: %w", err)
+// 	}
 
-	// Step 2: Make the API call to the login endpoint.
-	// Note: It's best practice to make this URL configurable, for example,
-	// by adding it to the remote config JSON file.
-	apiURL := "http://15.207.226.255:8961/api/auth/login/verify-2fa"
+// 	// Step 2: Make the API call to the login endpoint.
+// 	// Note: It's best practice to make this URL configurable, for example,
+// 	// by adding it to the remote config JSON file.
+// 	apiURL := "http://15.207.226.255:8961/api/auth/login/verify-2fa"
 
-	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(requestBody))
-	if err != nil {
-		log.Errorf("Failed to call the login API: %v", err)
-		return fmt.Errorf("could not connect to the authentication server: %w", err)
-	}
-	defer resp.Body.Close()
+// 	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(requestBody))
+// 	if err != nil {
+// 		log.Errorf("Failed to call the login API: %v", err)
+// 		return fmt.Errorf("could not connect to the authentication server: %w", err)
+// 	}
+// 	defer resp.Body.Close()
 
-	// Step 3: Read and process the server's response.
-	responseBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Errorf("Failed to read the API response: %v", err)
-		return fmt.Errorf("error reading response from server: %w", err)
-	}
+// 	// Step 3: Read and process the server's response.
+// 	responseBody, err := io.ReadAll(resp.Body)
+// 	if err != nil {
+// 		log.Errorf("Failed to read the API response: %v", err)
+// 		return fmt.Errorf("error reading response from server: %w", err)
+// 	}
 
-	if resp.StatusCode != http.StatusOK {
-		log.Errorf("❌ Login failed. The server responded with status %d.", resp.StatusCode)
-		log.Errorf("Server message: %s", string(responseBody))
-		return fmt.Errorf("authentication failed with status: %s", resp.Status)
-	}
+// 	if resp.StatusCode != http.StatusOK {
+// 		log.Errorf("❌ Login failed. The server responded with status %d.", resp.StatusCode)
+// 		log.Errorf("Server message: %s", string(responseBody))
+// 		return fmt.Errorf("authentication failed with status: %s", resp.Status)
+// 	}
 
-	// You can optionally parse the successful JSON response here to extract and store a token.
-	// For now, we will just confirm the successful login.
-	log.Info("✅ Login successful!")
-	log.Info("Server response: %s", string(responseBody))
+// 	// You can optionally parse the successful JSON response here to extract and store a token.
+// 	// For now, we will just confirm the successful login.
+// 	log.Info("✅ Login successful!")
+// 	log.Info("Server response: %s", string(responseBody))
 
-	return nil
-}
+// 	return nil
+// }
 
 func createValidatorCmd() *cobra.Command {
 	var mynode string
@@ -1687,14 +1783,16 @@ You will be securely prompted for your password. If authentication is successful
 it retrieves validator addresses and proceeds to update the 
 validator details using the provided API endpoint.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var email, password, token string
+			var password, token string
+			reader := bufio.NewReader(os.Stdin)
 
 			// Prompt for Email
 			fmt.Print("Enter registered email address: ")
-			_, err := fmt.Scanln(&email)
+			email, err := reader.ReadString('\n')
 			if err != nil {
 				return fmt.Errorf("failed to read email: %w", err)
 			}
+			email = strings.TrimSpace(email)
 			if email == "" {
 				return fmt.Errorf("email cannot be empty")
 			}
@@ -1724,7 +1822,7 @@ validator details using the provided API endpoint.`,
 			log.Info("🔐 Authenticating with the platform...")
 			authToken, err := authenticateAndGetToken(email, password, token)
 			if err != nil {
-				return fmt.Errorf("platform authentication failed: %w", err)
+				return fmt.Errorf("platform authentication failed: User not found")
 			}
 			log.Info("✅ Credentials verified successfully...")
 
@@ -1869,13 +1967,13 @@ func updateValidatorInfoAPI(authToken, email, operatorAddr, walletAddr, ethAddr,
 	}
 	defer resp.Body.Close()
 
-	responseBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read API response: %w", err)
-	}
+	// responseBody, err := io.ReadAll(resp.Body)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to read API response: %w", err)
+	// }
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("API call failed with status %s: %s", resp.Status, string(responseBody))
+		return fmt.Errorf("❌ Validator details already updated")
 	}
 
 	log.Info("✅ Validator details successfully updated in the platform.")
